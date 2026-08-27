@@ -372,3 +372,129 @@ export async function searchInRange(input: {
   });
   return rows<MemoryRow>(result).map(toMemory);
 }
+
+// ── semantic search ───────────────────────────────────────────────────────────
+
+import { VECTORS } from "./sql";
+import {
+  providerFromEnv,
+  toVectorLiteral,
+  type EmbeddingProvider,
+} from "./embedding";
+
+let provider: EmbeddingProvider | null | undefined;
+
+/** Resolved once. `null` means embeddings are switched off, not broken. */
+export function embeddings(): EmbeddingProvider | null {
+  if (provider === undefined) provider = providerFromEnv();
+  return provider;
+}
+
+/**
+ * Embeds one memory and stores the vector.
+ *
+ * Best-effort by contract: every failure is swallowed and reported as `false`.
+ * The memory is already written by the time this runs, and a side-car being
+ * down must never cost the corpus a memory.
+ */
+export async function indexMemory(memory: Memory): Promise<boolean> {
+  const p = embeddings();
+  if (!p) return false;
+  try {
+    // Title and content together: a title carries meaning the body often
+    // assumes, and embedding them apart loses the connection.
+    const [vector] = await p.embed([`${memory.title}\n\n${memory.content}`]);
+    if (!vector) return false;
+    await db().execute({
+      sql: VECTORS.store,
+      args: [toVectorLiteral(vector), p.model, memory.id],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface SemanticResult {
+  memories: Memory[];
+  /** Cosine distance per memory id: 0 identical, 2 opposite. */
+  distances: Record<string, number>;
+}
+
+/** Nearest neighbours. Throws only if embedding the QUERY fails. */
+export async function searchSemantic(input: {
+  query: string;
+  kind?: MemoryKind;
+  project?: string;
+  limit?: number;
+}): Promise<SemanticResult> {
+  await ensureSchema();
+  const p = embeddings();
+  if (!p) throw new Error("embeddings are not configured");
+
+  const [vector] = await p.embed([input.query]);
+  if (!vector) throw new Error("query produced no embedding");
+
+  const literal = toVectorLiteral(vector);
+  const kind = input.kind ? normalizeKind(input.kind) : "";
+  const project = normalizeProject(input.project);
+
+  const result = await db().execute({
+    sql: VECTORS.search,
+    args: [literal, kind, kind, project, project, literal, clampLimit(input.limit)],
+  });
+
+  const found = rows<MemoryRow & { distance: number }>(result);
+  return {
+    memories: found.map(toMemory),
+    distances: Object.fromEntries(found.map((r) => [r.id, Number(r.distance)])),
+  };
+}
+
+/** How much of the corpus carries a vector, and from which model. */
+export async function embeddingCoverage(): Promise<{
+  total: number;
+  embedded: number;
+  model: string | null;
+  enabled: boolean;
+}> {
+  await ensureSchema();
+  const p = embeddings();
+  try {
+    const r = firstRow<{ total: number; embedded: number; model: string | null }>(
+      await db().execute(VECTORS.coverage),
+    );
+    return {
+      total: Number(r?.total ?? 0),
+      embedded: Number(r?.embedded ?? 0),
+      model: r?.model || null,
+      enabled: Boolean(p),
+    };
+  } catch {
+    // The vector column may not exist on a database from before this feature.
+    return { total: 0, embedded: 0, model: null, enabled: Boolean(p) };
+  }
+}
+
+/**
+ * Embeds memories that have no vector yet, or whose vector came from a
+ * different model. Returns how many were indexed.
+ */
+export async function backfillEmbeddings(limit = 50): Promise<number> {
+  const p = embeddings();
+  if (!p) return 0;
+  await ensureSchema();
+
+  const pending = rows<{ id: string; title: string; content: string }>(
+    await db().execute({ sql: VECTORS.pending, args: [p.model, clampLimit(limit)] }),
+  );
+
+  let indexed = 0;
+  for (const row of pending) {
+    // One at a time rather than one big batch: a single oversized request that
+    // fails loses the whole set, and this runs in the background anyway.
+    const ok = await indexMemory({ ...(row as any), id: row.id } as Memory);
+    if (ok) indexed++;
+  }
+  return indexed;
+}

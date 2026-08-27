@@ -12,12 +12,18 @@ set -eu
 OWNER_PASSPHRASE="$(bashio::config 'owner_passphrase')"
 API_TOKEN="$(bashio::config 'api_token')"
 PUBLIC_URL="$(bashio::config 'public_url')"
+OLLAMA_URL="$(bashio::config 'ollama_url')"
+EMBEDDING_MODEL="$(bashio::config 'embedding_model')"
+EMBEDDING_DIMENSIONS="$(bashio::config 'embedding_dimensions')"
 
 # bashio renders an unset optional string as the literal "null", which would
 # then be a perfectly valid — and completely wrong — passphrase.
 [ "${OWNER_PASSPHRASE}" = "null" ] && OWNER_PASSPHRASE=""
 [ "${API_TOKEN}" = "null" ] && API_TOKEN=""
 [ "${PUBLIC_URL}" = "null" ] && PUBLIC_URL=""
+[ "${OLLAMA_URL}" = "null" ] && OLLAMA_URL=""
+[ "${EMBEDDING_MODEL}" = "null" ] && EMBEDDING_MODEL="bge-m3"
+[ "${EMBEDDING_DIMENSIONS}" = "null" ] && EMBEDDING_DIMENSIONS="1024"
 
 if [ -z "${OWNER_PASSPHRASE}" ]; then
     bashio::log.fatal "owner_passphrase is not set."
@@ -34,6 +40,9 @@ export DATABASE_URL="file:/data/arra-memory.db"
 export OWNER_PASSPHRASE
 export API_TOKEN
 export PUBLIC_URL
+export OLLAMA_URL
+export EMBEDDING_MODEL
+export EMBEDDING_DIMENSIONS
 export PORT=8099
 export PUBLIC_DIR=/app/public
 
@@ -46,6 +55,11 @@ else
 fi
 if bashio::var.has_value "${PUBLIC_URL}"; then
     bashio::log.info "  public:   ${PUBLIC_URL}"
+fi
+if bashio::var.has_value "${OLLAMA_URL}"; then
+    bashio::log.info "  search:   keyword (trigram FTS5) + semantic via ${EMBEDDING_MODEL}"
+else
+    bashio::log.info "  search:   keyword only (trigram FTS5) — set ollama_url for semantic"
 fi
 
 # exec so Bun becomes PID 1 of this process tree and receives the signals s6

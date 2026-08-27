@@ -134,6 +134,41 @@ and queries shorter than three characters fall back to a scan.
 If the index is ever unavailable, search degrades to a table scan rather than
 reporting an empty corpus.
 
+### Semantic search (optional)
+
+Point `ollama_url` at an Ollama server and `POST /api/search` gains two more
+modes. The server does not need to be the Home Assistant machine — a box on your
+LAN or private mesh is usually the better place, since a HAOS host rarely has
+room for a model.
+
+| Mode | What it does |
+|---|---|
+| `keyword` | Trigram FTS5 only |
+| `semantic` | Vector nearest-neighbour only. **Fails** if embeddings are unavailable |
+| `hybrid` (default) | Both, fused by reciprocal rank. Degrades to keyword and says why |
+
+The default model is `bge-m3`, and the reason is worth stating: it is genuinely
+multilingual. Measured on a real corpus, a Thai sentence scores **0.84** cosine
+similarity against its own English translation and **0.32** against unrelated
+Thai. That means recall works *across* languages — an English query finds a Thai
+memory. Verified end to end: the query "finding notes written in another language
+by meaning" returned a Thai memory sharing **zero characters** with it as the top
+hit, ahead of two English memories.
+
+Vectors are stored in libSQL's native `F32_BLOB(1024)` with a
+`libsql_vector_idx` ANN index — no extension, no separate vector database.
+
+Three failure rules, all verified:
+
+- A write **always** succeeds even when the embedding server is down. Indexing is
+  best-effort and never blocks the memory.
+- `hybrid` degrades to `keyword` and reports `fallback.reason`. It never silently
+  pretends a keyword scan was semantic.
+- `semantic` **fails with 503** rather than degrading, because a caller who asked
+  for semantic specifically deserves to know it did not happen.
+
+`POST /api/index/backfill` embeds memories written before you turned this on.
+
 ## A memory
 
 | Field | Notes |

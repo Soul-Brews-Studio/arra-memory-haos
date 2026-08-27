@@ -302,6 +302,19 @@ export const MIGRATIONS: string[] = [
   `ALTER TABLE memories ADD COLUMN project    TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE memories ADD COLUMN url        TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE memories ADD COLUMN created_by TEXT NOT NULL DEFAULT ''`,
+
+  // Semantic search. F32_BLOB is a libSQL native type, not an extension —
+  // 1024 to match bge-m3. The width is fixed at column-creation time, so
+  // changing the model to one with different dimensions means a new column and
+  // a re-embed, not an edit here.
+  `ALTER TABLE memories ADD COLUMN embedding F32_BLOB(1024)`,
+  `ALTER TABLE memories ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''`,
+
+  // An approximate-nearest-neighbour index, also native. Without it a semantic
+  // query is a full scan computing cosine distance per row — fine for a hundred
+  // memories, not for a hundred thousand.
+  `CREATE INDEX IF NOT EXISTS memories_embedding_idx
+     ON memories (libsql_vector_idx(embedding))`,
 ];
 
 // ── OAuth ─────────────────────────────────────────────────────────────────────
@@ -351,4 +364,43 @@ export const OAUTH = {
     sweep: `DELETE FROM oauth_tokens
              WHERE expires_at IS NOT NULL AND expires_at <= ?`,
   },
+} as const;
+
+// ── semantic search ───────────────────────────────────────────────────────────
+
+export const VECTORS = {
+  /** args: vectorLiteral, model, id */
+  store: `UPDATE memories SET embedding = vector32(?), embedding_model = ? WHERE id = ?`,
+
+  /**
+   * Nearest neighbours by cosine distance.
+   *
+   * Distance, not similarity: 0 is identical and 2 is opposite, so this sorts
+   * ASCENDING. Rows with no embedding are excluded rather than ranked last —
+   * a NULL vector is "not indexed yet", which is not the same as "unrelated",
+   * and letting it score would be a quiet lie.
+   *
+   * args: vectorLiteral, kind, kind, project, project, vectorLiteral, limit
+   */
+  search: `SELECT id, title, content, kind, tags, source, importance,
+                  project, url, created_by, created_at, updated_at,
+                  vector_distance_cos(embedding, vector32(?)) AS distance
+             FROM memories
+            WHERE embedding IS NOT NULL
+              AND (? = '' OR kind = ?)
+              AND (? = '' OR project = ?)
+            ORDER BY vector_distance_cos(embedding, vector32(?)) ASC
+            LIMIT ?`,
+
+  /** Memories still missing a vector, oldest first. args: model, limit */
+  pending: `SELECT id, title, content FROM memories
+             WHERE embedding IS NULL OR embedding_model <> ?
+             ORDER BY updated_at DESC
+             LIMIT ?`,
+
+  /** How much of the corpus is indexed, and by which model. */
+  coverage: `SELECT COUNT(*) AS total,
+                    SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded,
+                    MAX(embedding_model) AS model
+               FROM memories`,
 } as const;

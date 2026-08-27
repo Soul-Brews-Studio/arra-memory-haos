@@ -2,11 +2,15 @@ import { Elysia } from "elysia";
 import { authenticate, unauthorized, type AuthConfig } from "./auth";
 import { handleMcp, type JsonRpcRequest } from "./mcp";
 import {
+  backfillEmbeddings,
   createMemory,
   deleteMemory,
+  embeddingCoverage,
   getMemory,
   getMemoryStats,
+  indexMemory,
   searchMemories,
+  searchSemantic,
   updateMemory,
 } from "./memory";
 import {
@@ -294,6 +298,10 @@ const app = new Elysia()
     try {
       const body = (await request.json()) as any;
       const memory = await createMemory({ ...body, source: body.source ?? "web" });
+      // Best-effort and deliberately not awaited into the response: the memory
+      // is already durable, and a slow or dead embedding server must not make
+      // the write appear to fail.
+      void indexMemory(memory);
       return json({ memory }, 201);
     } catch (error) {
       return json(
@@ -325,10 +333,83 @@ const app = new Elysia()
     return deleted ? json({ id: params.id, deleted: true }) : json({ error: "not_found" }, 404);
   })
 
+  // Semantic and hybrid recall. Degradation is REPORTED, never silent: the
+  // response always says which mode actually ran and why, so a caller is never
+  // left believing a keyword scan was a semantic search.
+  .post("/api/search", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+
+    const body = (await request.json().catch(() => ({}))) as any;
+    const requestedMode: "keyword" | "semantic" | "hybrid" = body.mode ?? "hybrid";
+    const query = String(body.query ?? "");
+    const common = { kind: body.kind, project: body.project, limit: body.limit };
+
+    if (requestedMode === "keyword" || !query.trim()) {
+      const memories = await searchMemories({ query, ...common, tag: body.tag });
+      return json({ requestedMode, effectiveMode: "keyword", fallback: null, memories });
+    }
+
+    try {
+      const semantic = await searchSemantic({ query, ...common });
+      if (requestedMode === "semantic") {
+        return json({
+          requestedMode, effectiveMode: "semantic", fallback: null,
+          memories: semantic.memories, distances: semantic.distances,
+        });
+      }
+
+      // Hybrid: reciprocal rank fusion. Ranks rather than raw scores, because
+      // BM25 and cosine distance are not on comparable scales and normalising
+      // them against each other invents a precision neither one has.
+      const keyword = await searchMemories({ query, ...common });
+      const K = 60;
+      const scores = new Map<string, number>();
+      const byId = new Map<string, any>();
+      keyword.forEach((m, i) => {
+        scores.set(m.id, (scores.get(m.id) ?? 0) + 1 / (K + i + 1));
+        byId.set(m.id, m);
+      });
+      semantic.memories.forEach((m, i) => {
+        scores.set(m.id, (scores.get(m.id) ?? 0) + 1 / (K + i + 1));
+        byId.set(m.id, m);
+      });
+      const merged = [...scores.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, body.limit ?? 20)
+        .map(([id]) => byId.get(id));
+
+      return json({
+        requestedMode, effectiveMode: "hybrid", fallback: null,
+        memories: merged,
+        counts: { keyword: keyword.length, semantic: semantic.memories.length },
+      });
+    } catch (error) {
+      // Explicit semantic FAILS; hybrid degrades to keyword and names the reason.
+      const reason = error instanceof Error ? error.message : "embedding failed";
+      if (requestedMode === "semantic") {
+        return json({ error: "semantic_unavailable", message: reason }, 503);
+      }
+      const memories = await searchMemories({ query, ...common, tag: body.tag });
+      return json({
+        requestedMode, effectiveMode: "keyword",
+        fallback: { used: true, reason }, memories,
+      });
+    }
+  })
+
+  .post("/api/index/backfill", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const body = (await request.json().catch(() => ({}))) as any;
+    return json({ indexed: await backfillEmbeddings(body.limit ?? 50) });
+  })
+
   .get("/api/stats", async ({ request }) => {
     const auth = await authenticate(request, config);
     if (!auth.ok) return unauthorized(originOf(request));
-    return json({ stats: await getMemoryStats() });
+    const [stats, coverage] = await Promise.all([getMemoryStats(), embeddingCoverage()]);
+    return json({ stats, embeddings: coverage });
   })
 
   // ── MCP ────────────────────────────────────────────────────────────────────
