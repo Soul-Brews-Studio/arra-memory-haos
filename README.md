@@ -54,10 +54,33 @@ codex mcp add arra-memory --url http://homeassistant.local:8099/mcp
 
 ### Connect claude.ai
 
-Publish the add-on at a public HTTPS hostname (a Cloudflare Tunnel does this
-without opening a port), set `public_url` to that hostname, then in **Settings →
-Connectors → Add custom connector** paste `https://your-host/mcp`. Approve with
-your owner passphrase on the page that appears.
+claude.ai needs a public HTTPS URL — it cannot reach a LAN or VPN address, and it
+cannot send a static bearer header. Publish the add-on through a Cloudflare
+Tunnel (which dials outward and opens no inbound port), set `public_url` to that
+hostname, then in **Settings → Connectors → Add custom connector** paste
+`https://your-host/mcp`. Approve with your owner passphrase on the page that
+appears.
+
+## Three ways to reach it
+
+Ingress and the LAN port are the add-on's own doors; the other two are just
+different routes to the same port, and none of them weakens the auth in front of
+it. Prefer the narrowest one that reaches your client.
+
+| Path | Address | Who it is for |
+|---|---|---|
+| Ingress | the sidebar panel | The browser UI, authenticated by Home Assistant |
+| LAN | `http://<ha-host>:8099` | Clients on the same network |
+| VPN | `http://<host>.<your-mesh>:8099` | Other peers on a private mesh — never leaves the overlay |
+| Public | `https://<your-tunnel-host>` | claude.ai, which has no other option |
+
+A private mesh such as NetBird or Tailscale needs nothing from this add-on: if
+the Home Assistant host is already a peer, the add-on's port is reachable over
+the mesh the moment it is published.
+
+**Everything except `/api/health` and the OAuth discovery documents requires
+authentication on every path, including the public one.** Discovery has to be
+public — it is how an MCP client learns where `/authorize` lives.
 
 ## The tool list is not a constant
 
