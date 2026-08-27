@@ -29,7 +29,7 @@ database is a file on your own machine.
 | `api_token` | no | A static bearer token for scripts and MCP clients that read a config file. Leave blank to disable that path. |
 | `public_url` | no | Set **only** when the add-on is published through a tunnel and a remote MCP client needs absolute OAuth URLs. Blank derives every URL from the request, which is correct for LAN and ingress. |
 
-## Three ways in
+## Proving you are the owner
 
 Different callers can prove they are the owner in different ways, and no single
 mechanism serves them all.
@@ -61,7 +61,7 @@ hostname, then in **Settings → Connectors → Add custom connector** paste
 `https://your-host/mcp`. Approve with your owner passphrase on the page that
 appears.
 
-## Three ways to reach it
+## Reaching it
 
 Ingress and the LAN port are the add-on's own doors; the other two are just
 different routes to the same port, and none of them weakens the auth in front of
