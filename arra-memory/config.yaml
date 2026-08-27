@@ -1,0 +1,57 @@
+name: "Arra Memory"
+version: "0.1.0"
+slug: "arra_memory"
+description: >-
+  A durable memory corpus that lives in your Home Assistant sidebar and answers
+  to Claude over MCP. Memories are stored in an embedded libSQL database under
+  the add-on's own /data, so they survive restarts and ride along in Home
+  Assistant's backups.
+url: "https://github.com/Soul-Brews-Studio/arra-memory-haos/tree/main/arra-memory"
+arch:
+  - amd64
+  - aarch64
+startup: application
+# boot: auto — a host reboot leaves `boot: manual` add-ons stopped, and a
+# stopped add-on reads as a failed install when it is nothing of the kind.
+boot: auto
+# The HA base image ships s6-overlay and owns PID 1 via ENTRYPOINT ["/init"].
+init: false
+hassio_api: false
+homeassistant_api: false
+host_network: false
+# The sidebar panel. ingress_panel is still FALSE by default on a fresh install
+# in some Supervisor versions — if the icon does not appear, that flag is why.
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:brain
+panel_title: Memory
+panel_admin: false
+# The corpus lives here. /data is the only path Supervisor persists across
+# restarts AND includes in Home Assistant backups.
+map:
+  - data:rw
+stage: experimental
+options:
+  # Owner passphrase for the web UI and for approving MCP clients. Generate one
+  # (`openssl rand -base64 32`) and set it in this add-on's Configuration tab.
+  # Blank means the add-on refuses to start rather than serving your memories
+  # to anyone who finds the URL.
+  owner_passphrase: ""
+  # Optional static bearer token for scripts, curl, and MCP clients that read a
+  # config file (Claude Code, Codex). claude.ai connectors CANNOT send a static
+  # header and must use the OAuth flow instead — that is why both exist. Blank
+  # disables this path entirely, leaving OAuth and the web session.
+  api_token: ""
+  # Optional public origin, e.g. https://memory.example.com — set ONLY when this
+  # add-on is published through a tunnel and a remote MCP client needs absolute
+  # OAuth URLs. Blank = derive every URL from the incoming request, which is
+  # correct for LAN and ingress use.
+  public_url: ""
+schema:
+  owner_passphrase: password
+  api_token: password
+  # `str` and NOT `url?`: an optional URL key whose shipped default is ""
+  # fails Supervisor's options validation BEFORE the container is created, so
+  # the add-on never starts and its log is EMPTY — the only trace is one line
+  # in the supervisor log. Learned the hard way, 2026-08-27.
+  public_url: str

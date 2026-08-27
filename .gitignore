@@ -1,0 +1,7 @@
+node_modules/
+public/main.js
+public/app.css
+*.db
+*.db-*
+.env
+.dev.vars

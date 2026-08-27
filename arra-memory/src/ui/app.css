@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/*
+ * Arra Memory — the archive.
+ *
+ * The visual thesis: a memory is a document, not a row. Content is set in a
+ * serif at reading size and given real measure; the chrome around it is quiet
+ * sans; every machine-generated fact (id, timestamp, source, count) is mono.
+ * That three-way split is the whole identity, and it needs no downloaded font,
+ * which matters for an add-on that may run on a house with no internet.
+ *
+ * Ground is warm charcoal rather than neutral grey — an archive lit by a lamp,
+ * not a spreadsheet. One accent, ember, carries every interactive affordance.
+ */
+
+@theme {
+  --color-ground: #14120f;
+  --color-panel: #1c1915;
+  --color-raised: #262119;
+  --color-line: #332e26;
+  --color-line-bright: #453e33;
+
+  --color-ink: #f4f1ea;
+  --color-dim: #a8a091;
+  --color-faint: #756d5f;
+
+  --color-ember: #d8853a;
+  --color-ember-soft: #3a2717;
+
+  /* Kinds get their own hues so the corpus is scannable by shape of thought,
+     not just by text. These are semantic, and deliberately not the accent. */
+  --color-kind-note: #8fa8c4;
+  --color-kind-decision: #d8853a;
+  --color-kind-lesson: #a3c48f;
+  --color-kind-context: #b09ac4;
+  --color-kind-person: #d4a08f;
+  --color-kind-project: #7fc0bb;
+
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+                "Times New Roman", serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    /* The add-on renders inside a Home Assistant ingress iframe, which supplies
+       its own scroll container. A second one here would nest scrollbars. */
+    margin: 0;
+  }
+
+  /* Every focusable thing gets the same visible ring — an add-on is operated
+     with a keyboard more often than its author expects. */
+  :focus-visible {
+    outline: 2px solid var(--color-ember);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-ember-soft);
+    color: var(--color-ink);
+  }
+
+  /* A dense archive scrolls a lot; the default scrollbar is louder than the
+     content it sits beside. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border-radius: 99px;
+    border: 3px solid var(--color-ground);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-line-bright); }
+}
+
+@layer components {
+  /* The lamp: a single warm wash behind the header, so the top of the archive
+     feels lit rather than the whole page feeling tinted. */
+  .lamp {
+    background:
+      radial-gradient(
+        60rem 24rem at 12% -6rem,
+        color-mix(in oklab, var(--color-ember) 12%, transparent),
+        transparent 70%
+      );
+  }
+
+  /* Memory content is the one place that gets serif at reading measure. */
+  .prose-memory {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    color: color-mix(in oklab, var(--color-ink) 92%, transparent);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    color: var(--color-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-faint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

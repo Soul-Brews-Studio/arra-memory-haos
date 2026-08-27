@@ -1,0 +1,31 @@
+{
+  "name": "arra-memory-haos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A durable memory corpus for Home Assistant, served in the sidebar and to Claude over MCP.",
+  "scripts": {
+    "dev": "bun run build:ui && bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "build:ui": "bun run build:js && bun run build:css",
+    "build:js": "bun build src/ui/main.tsx --outdir public --minify --target browser",
+    "build:css": "bunx @tailwindcss/cli -i src/ui/app.css -o public/app.css --minify",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@kitajs/html": "^4.2.9",
+    "@libsql/client": "^0.17.4",
+    "elysia": "^1.4.29",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.14",
+    "@types/bun": "^1.4.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.1.14",
+    "typescript": "^5.9.0"
+  }
+}
