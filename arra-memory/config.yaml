@@ -1,5 +1,5 @@
 name: "Arra Memory"
-version: "0.1.0"
+version: "0.1.1"
 slug: "arra_memory"
 description: >-
   A durable memory corpus that lives in your Home Assistant sidebar and answers
@@ -26,6 +26,19 @@ ingress_port: 8099
 panel_icon: mdi:brain
 panel_title: Memory
 panel_admin: false
+# A LAN port in addition to ingress, because ingress alone cannot serve MCP.
+#
+# Ingress authenticates with Home Assistant's own session and rewrites the path
+# under a per-session token — fine for a browser, impossible for an MCP client,
+# which has no HA session and must reach a stable URL with its own bearer or
+# OAuth credentials. Nothing is exposed beyond the LAN by this: a Cloudflare
+# Tunnel, if you use one, still dials outward and opens no inbound port.
+#
+# Set to null in the add-on's Network tab to close it and keep ingress only.
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: "MCP endpoint and API for Claude Code, Codex, and tunnels"
 # The corpus lives here. /data is the only path Supervisor persists across
 # restarts AND includes in Home Assistant backups.
 map:
