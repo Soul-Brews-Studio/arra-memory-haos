@@ -169,6 +169,14 @@ Three failure rules, all verified:
 
 `POST /api/index/backfill` embeds memories written before you turned this on.
 
+**Reaching the Ollama server from inside the add-on.** An add-on container sits
+on Home Assistant's own Docker bridge. It can reach your LAN, but it has *no
+route to a VPN overlay* even when the Home Assistant host itself is a mesh peer —
+the mesh client runs in a different namespace. Use the server's LAN address
+(`http://192.168.1.x:11434`), not its mesh name. Learned by watching backfill
+return `{"indexed":0}` against a mesh address that answered perfectly from
+elsewhere.
+
 ## A memory
 
 | Field | Notes |
