@@ -490,7 +490,7 @@ const app = new Elysia()
       // recording themselves would double-count every hybrid search.
       const semantic = await searchSemanticNoLog({ query, ...common });
       if (requestedMode === "semantic") {
-        void recordSearch({
+        if (query.trim()) void recordSearch({
           query, mode: "semantic", kind: body.kind, project: body.project,
           resultIds: semantic.memories.map((m) => m.id),
           durationMs: Date.now() - started,
@@ -522,7 +522,7 @@ const app = new Elysia()
         .slice(0, body.limit ?? 20)
         .map(([id]) => byId.get(id));
 
-      void recordSearch({
+      if (query.trim()) void recordSearch({
         query, mode: "hybrid", kind: body.kind, project: body.project,
         resultIds: merged.map((m: any) => m.id),
         durationMs: Date.now() - started,

@@ -169,14 +169,22 @@ async function logged<T extends { id: string }>(
 ): Promise<T[]> {
   const started = Date.now();
   const results = await run();
-  // Fire-and-forget. The caller already has its answer, and searchlog.ts
-  // swallows every failure — observability must not cost the thing observed.
-  void recordSearch({
-    ...meta,
-    resultIds: results.map((r) => r.id),
-    durationMs: Date.now() - started,
-    source: meta.source ?? "internal",
-  });
+
+  // An empty query is a LISTING, not a search. The UI refetches the whole
+  // archive on load and on every filter change, and recording those buries the
+  // handful of entries anyone actually wants to read under a wall of
+  // "(empty query) → 4 results". "What was I searching for" is the question;
+  // scrolling a list is not an answer to it.
+  if ((meta.query ?? "").trim()) {
+    // Fire-and-forget. The caller already has its answer, and searchlog.ts
+    // swallows every failure — observability must not cost the thing observed.
+    void recordSearch({
+      ...meta,
+      resultIds: results.map((r) => r.id),
+      durationMs: Date.now() - started,
+      source: meta.source ?? "internal",
+    });
+  }
   return results;
 }
 
@@ -498,7 +506,7 @@ export async function searchSemantic(input: {
 }): Promise<SemanticResult> {
   const started = Date.now();
   const result = await searchSemanticNoLog(input);
-  void recordSearch({
+  if (input.query.trim()) void recordSearch({
     query: input.query,
     mode: "semantic",
     kind: input.kind,
