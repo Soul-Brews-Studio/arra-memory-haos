@@ -31,11 +31,19 @@ export interface NavItem {
 }
 
 export function NavBar({
-  primary,
   items,
+  lang,
 }: {
-  primary?: { label: string; onSelect: () => void };
   items: NavItem[];
+  /**
+   * The language switch, in the bar itself.
+   *
+   * It used to live in Settings, which is wrong for this one control: someone
+   * who lands on a page in a language they do not read cannot be asked to find
+   * the settings page in order to fix that. It is the one preference that has
+   * to be reachable without reading anything.
+   */
+  lang?: { label: string; title: string; onSelect: () => void };
 }) {
   // Sorted here, not by the caller, so every bar in the app orders the same way.
   // Unweighted items default to 50 and fall in the middle rather than jumping to
@@ -66,13 +74,15 @@ export function NavBar({
         </button>
       ))}
 
-      {primary && (
+      {lang && (
         <button
           type="button"
-          onClick={primary.onSelect}
-          className="ml-1 rounded-lg bg-ember px-3.5 py-1.5 text-sm font-semibold text-[#17130e] transition hover:brightness-110"
+          onClick={lang.onSelect}
+          title={lang.title}
+          className="ml-1 rounded-lg border border-line px-2.5 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors hover:border-line-bright"
+          style={{ color: "var(--color-faint)" }}
         >
-          {primary.label}
+          {lang.label}
         </button>
       )}
     </nav>

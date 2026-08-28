@@ -1,18 +1,20 @@
-import { LANGS, t, useLang, type Lang } from "./i18n";
+import { t } from "./i18n";
 import { THEMES, useTheme } from "./theme";
 
 /**
- * Theme and language, at the top of Settings.
+ * The palette, at the top of Settings.
  *
- * Both are per-browser preferences rather than server configuration — two people
- * opening the same add-on should not have to agree on a palette, and the person
- * who reads it in English is often not the person who set it to Thai. So both
- * live in localStorage and both are also URL parameters, which is what makes an
- * English or light-theme view a link you can send.
+ * A per-browser preference rather than server configuration — two people opening
+ * the same add-on should not have to agree on a palette. Stored in localStorage
+ * and also readable from `?theme=`, which makes a particular look a link you can
+ * send.
+ *
+ * The LANGUAGE switch deliberately does not live here. It is the one preference
+ * someone may need before they can read the page that would let them change it,
+ * so it sits in the nav bar instead.
  */
 export function Appearance() {
   const [theme, setTheme] = useTheme();
-  const [lang, setLang] = useLang();
 
   return (
     <section className="mb-8 flex flex-col gap-6">
@@ -60,26 +62,6 @@ export function Appearance() {
             );
           })}
         </div>
-      </div>
-
-      <div>
-        <p className="eyebrow mb-2">{t("lang.label")}</p>
-        <div className="flex flex-wrap gap-1.5">
-          {LANGS.map((code) => (
-            <button
-              key={code}
-              type="button"
-              className="chip"
-              aria-pressed={code === lang}
-              onClick={() => setLang(code as Lang)}
-            >
-              {t(code === "th" ? "lang.th" : "lang.en")}
-            </button>
-          ))}
-        </div>
-        {/* Said plainly, because it is the one rule that keeps a bilingual corpus
-            honest: the container is translated, the contents never are. */}
-        <p className="meta mt-2 max-w-lg">{t("settings.langNote")}</p>
       </div>
     </section>
   );

@@ -32,8 +32,8 @@ export default function App() {
   // hide.
   const [route, navigate] = useRoute();
   const { view, query } = route;
-  // Re-rendered when the language changes; the value is read through t().
-  useLang();
+  // The value and setter, not just the re-render: the switch is in the nav now.
+  const [lang, setLang] = useLang();
   const scope: Scope = {
     kind: route.kind,
     workspace: route.workspace,
@@ -133,7 +133,13 @@ export default function App() {
   // memory is what this app is for; it is not an archive-only errand.
   const nav = (
     <NavBar
-      primary={{ label: t("nav.remember"), onSelect: () => setComposing(true) }}
+      // Remember moved onto the Memory page itself — writing a memory is
+      // something you do while looking at your memories, not a nav destination.
+      lang={{
+        label: lang === "th" ? "EN" : "ไทย",
+        title: t("lang.label"),
+        onSelect: () => setLang(lang === "th" ? "en" : "th"),
+      }}
       items={[
         // Weights, not array order — see NavItem. Gaps of 10 leave room to
         // add a destination between two existing ones without renumbering.
@@ -173,7 +179,7 @@ export default function App() {
         {
           label: t("nav.settings"),
           title: t("nav.settings.title"),
-          weight: 90,
+          weight: 50,
           active: view === "settings",
           onSelect: () => setView("settings"),
         },
@@ -181,7 +187,7 @@ export default function App() {
           label: t("nav.lock"),
           title: t("nav.lock.title"),
           danger: true,
-          weight: 100,
+          weight: 40,
           onSelect: () =>
             void api.session.close().finally(() => {
               setPhase("locked");
@@ -372,25 +378,38 @@ function Archive({
           <label className="sr-only" htmlFor="search">
             {t("archive.searchLabel")}
           </label>
-          <div className="relative">
-            <svg
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
-              width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+          {/* Writing a memory belongs beside the memories, not in the nav. It is
+              something you do while looking at what you already have — usually
+              BECAUSE of what you are looking at — so it sits next to the search
+              box on this page rather than following you onto Settings. */}
+          <div className="flex items-stretch gap-2">
+            <div className="relative flex-1">
+              <svg
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+                width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
+                <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+              <input
+                id="search"
+                ref={searchRef}
+                value={query}
+                onChange={(e) => onQuery(e.target.value)}
+                placeholder={t("archive.search")}
+                className="w-full rounded-lg border border-line bg-panel py-2.5 pl-10 pr-16 text-ink placeholder:text-faint focus:border-transparent"
+              />
+              <kbd className="meta pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-line px-1.5 py-0.5">
+                /
+              </kbd>
+            </div>
+            <button
+              type="button"
+              onClick={onCompose}
+              className="shrink-0 rounded-lg bg-ember px-4 text-sm font-semibold text-[#17130e] transition hover:brightness-110"
             >
-              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
-              <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-            <input
-              id="search"
-              ref={searchRef}
-              value={query}
-              onChange={(e) => onQuery(e.target.value)}
-              placeholder={t("archive.search")}
-              className="w-full rounded-lg border border-line bg-panel py-2.5 pl-10 pr-16 text-ink placeholder:text-faint focus:border-transparent"
-            />
-            <kbd className="meta pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-line px-1.5 py-0.5">
-              /
-            </kbd>
+              + {t("nav.remember")}
+            </button>
           </div>
 
           <Chips
