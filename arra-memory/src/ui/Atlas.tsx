@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { api } from "./api";
 import { kindColor } from "./Chips";
@@ -101,7 +101,7 @@ export function Atlas({
     [scope],
   );
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     let live = true;
     api.graph(scope)
       .then((g) => live && (setGraph(g), setError(null)))
@@ -109,6 +109,28 @@ export function Atlas({
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
+
+  useEffect(() => reload(), [reload]);
+
+  /**
+   * Rebuild when the tab comes back.
+   *
+   * The same reason the memory list does it: the corpus has more than one
+   * writer, and a drawing of a corpus that has since changed is worse than a
+   * stale list — a list at least looks like text you might reread, while this
+   * looks like a measurement.
+   */
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [reload]);
 
   useEffect(() => {
     const host = mount.current;

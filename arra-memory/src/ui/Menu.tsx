@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * A flat nav bar. Every destination is one click.
@@ -90,42 +90,7 @@ export function NavBar({
         </button>
       ))}
 
-      {themes && (
-        <span className="ml-1 flex items-center gap-1" role="group" aria-label="Theme">
-          {themes.options.map((item) => {
-            const on = item.id === themes.current;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => themes.onSelect(item.id)}
-                aria-pressed={on}
-                aria-label={item.label}
-                title={`${item.label} — ${item.note}`}
-                className="grid size-6 place-items-center rounded-full border transition-transform hover:scale-110"
-                style={{
-                  background: item.swatch[0],
-                  borderColor: on ? "var(--color-ember)" : "var(--color-line)",
-                  // The active swatch is ringed rather than merely recoloured:
-                  // on a bar of six coloured dots, colour cannot also carry
-                  // selection without one of the two becoming unreadable.
-                  boxShadow: on ? "0 0 0 2px var(--color-ember-soft)" : undefined,
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  className="block rounded-full transition-all"
-                  style={{
-                    background: item.swatch[1],
-                    width: on ? "0.6rem" : "0.45rem",
-                    height: on ? "0.6rem" : "0.45rem",
-                  }}
-                />
-              </button>
-            );
-          })}
-        </span>
-      )}
+      {themes && <ThemePicker {...themes} />}
 
       {lang && (
         <button
@@ -139,6 +104,109 @@ export function NavBar({
         </button>
       )}
     </nav>
+  );
+}
+
+/**
+ * The palette, behind one swatch.
+ *
+ * This was six dots in a row, which is the chip idiom — and the chip idiom is
+ * right for FILTERS, because those are working state you compare at a glance
+ * while reading. A theme is not that. It is set once and then lived with, so
+ * keeping six of them permanently in the bar spent about 170px of horizontal
+ * space on a decision nobody is making right now.
+ *
+ * The distinction is the rule, not "dropdowns are bad": show what is being
+ * compared, tuck away what has already been decided.
+ */
+function ThemePicker({
+  current,
+  options,
+  onSelect,
+}: {
+  current: string;
+  options: Array<{ id: string; label: string; note: string; swatch: [string, string] }>;
+  onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const active = options.find((o) => o.id === current) ?? options[0]!;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={box} className="relative ml-1" data-escape-guard={open ? "" : undefined}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={active.label}
+        title={`${active.label} — ${active.note}`}
+        className="grid size-8 place-items-center rounded-lg border transition-colors"
+        style={{
+          background: active.swatch[0],
+          borderColor: open ? "var(--color-ember)" : "var(--color-line)",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          className="block size-2.5 rounded-full"
+          style={{ background: active.swatch[1] }}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-1.5 w-52 overflow-hidden rounded-lg border border-line shadow-xl"
+          style={{ background: "var(--color-panel)" }}
+        >
+          {options.map((item) => {
+            const on = item.id === current;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={on}
+                onClick={() => { onSelect(item.id); setOpen(false); }}
+                className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left transition-colors hover:bg-raised"
+                style={{ background: on ? "var(--color-ember-soft)" : undefined }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="grid size-5 shrink-0 place-items-center rounded-full border"
+                  style={{ background: item.swatch[0], borderColor: "var(--color-line-bright)" }}
+                >
+                  <span className="block size-2 rounded-full" style={{ background: item.swatch[1] }} />
+                </span>
+                <span
+                  className="truncate text-sm"
+                  style={{ color: on ? "var(--color-ember)" : "var(--color-ink)" }}
+                >
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -178,7 +246,7 @@ export function Panel({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (document.querySelector('[role="dialog"], [data-escape-guard]')) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);

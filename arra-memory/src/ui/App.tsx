@@ -124,6 +124,34 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [phase, load, query]);
 
+  /**
+   * Catch up when the tab comes back.
+   *
+   * The corpus has more than one writer. Claude writes over MCP, another browser
+   * writes, a merge runs from a script — and this page only reloaded when the
+   * query or a filter changed, so none of that reached it. A chip row would keep
+   * offering `decision 1` after the last decision had been merged away, and
+   * clicking it returned nothing: the UI confidently describing a corpus that no
+   * longer existed.
+   *
+   * Refetching on focus rather than polling, because the case is always the
+   * same shape — you did something elsewhere and came back. A timer would spend
+   * requests on a tab nobody is looking at to fix a problem that only matters
+   * the moment someone looks.
+   */
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const onFocus = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [phase, load]);
+
   if (phase === "checking") return <Splash />;
   if (phase === "locked") return <Lock onOpen={() => setPhase("ready")} />;
 
