@@ -46,7 +46,7 @@ import {
   searchLogStats,
 } from "./searchlog";
 import { escapeHtml, readCookie, timingSafeEqual, type MemoryKind } from "./utils";
-import { replicaStatus } from "./db";
+import { ensureSchema, replicaStatus } from "./db";
 import { VERSION } from "./version";
 
 const PORT = Number(process.env.PORT ?? 8099);
@@ -842,6 +842,25 @@ const app = new Elysia()
 // Expired codes and tokens are ignored on read; this only stops the tables
 // growing. Hourly is far more often than necessary and costs nothing.
 setInterval(() => void sweepExpired().catch(() => {}), 60 * 60 * 1000);
+
+/**
+ * Open the database before serving, not on the first request.
+ *
+ * The schema was created lazily, which meant replication also started lazily —
+ * so `/api/health` answered `replica: false` until something happened to touch
+ * the corpus, and the endpoint whose entire job is reporting state reported the
+ * wrong one for as long as the add-on was idle. Starting here also means a bad
+ * Turso credential is in the log at boot rather than on someone's first search.
+ *
+ * Not awaited: a slow or unreachable Turso must delay the health endpoint, not
+ * prevent the add-on from ever listening. ensureSchema is memoized, so the first
+ * request joins this same promise rather than starting a second migration.
+ */
+void ensureSchema().catch((error) => {
+  console.error(
+    `[arra-memory] schema/replica startup failed: ${error instanceof Error ? error.message : error}`,
+  );
+});
 
 app.listen({ port: PORT, hostname: "0.0.0.0" });
 
