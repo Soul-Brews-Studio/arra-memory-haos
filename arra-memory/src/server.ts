@@ -5,6 +5,8 @@ import { enableAllTools, setToolDisabled, UNDISABLEABLE } from "./tools";
 import {
   backfillEmbeddings,
   createMemory,
+  searchMemoriesNoLog,
+  searchSemanticNoLog,
   deleteMemory,
   embeddingCoverage,
   getMemory,
@@ -406,24 +408,14 @@ const app = new Elysia()
     if (!auth.ok) return unauthorized(originOf(request));
 
     const url = new URL(request.url);
-    const started = Date.now();
     const query = url.searchParams.get("q") ?? undefined;
     const kind = (url.searchParams.get("kind") as MemoryKind) || undefined;
     const memories = await searchMemories({
       query,
       kind,
       limit: Number(url.searchParams.get("limit")) || undefined,
+      source: "web",
     });
-    // Only record a real query — the UI refetches on every keystroke and on
-    // load, and logging empty browses would bury the searches worth seeing.
-    if (query?.trim()) {
-      void recordSearch({
-        query, kind, mode: "keyword",
-        resultIds: memories.map((m) => m.id),
-        durationMs: Date.now() - started,
-        source: "web",
-      });
-    }
     return json({ memories, count: memories.length });
   })
 
@@ -488,13 +480,22 @@ const app = new Elysia()
     const common = { kind: body.kind, project: body.project, limit: body.limit };
 
     if (requestedMode === "keyword" || !query.trim()) {
-      const memories = await searchMemories({ query, ...common, tag: body.tag });
+      const memories = await searchMemories({ query, ...common, tag: body.tag, source: "web" });
       return json({ requestedMode, effectiveMode: "keyword", fallback: null, memories });
     }
 
+    const started = Date.now();
     try {
-      const semantic = await searchSemantic({ query, ...common });
+      // NoLog variants: hybrid is one user action running two passes, and both
+      // recording themselves would double-count every hybrid search.
+      const semantic = await searchSemanticNoLog({ query, ...common });
       if (requestedMode === "semantic") {
+        void recordSearch({
+          query, mode: "semantic", kind: body.kind, project: body.project,
+          resultIds: semantic.memories.map((m) => m.id),
+          durationMs: Date.now() - started,
+          source: "web",
+        });
         return json({
           requestedMode, effectiveMode: "semantic", fallback: null,
           memories: semantic.memories, distances: semantic.distances,
@@ -504,7 +505,7 @@ const app = new Elysia()
       // Hybrid: reciprocal rank fusion. Ranks rather than raw scores, because
       // BM25 and cosine distance are not on comparable scales and normalising
       // them against each other invents a precision neither one has.
-      const keyword = await searchMemories({ query, ...common });
+      const keyword = await searchMemoriesNoLog({ query, ...common });
       const K = 60;
       const scores = new Map<string, number>();
       const byId = new Map<string, any>();
@@ -521,6 +522,13 @@ const app = new Elysia()
         .slice(0, body.limit ?? 20)
         .map(([id]) => byId.get(id));
 
+      void recordSearch({
+        query, mode: "hybrid", kind: body.kind, project: body.project,
+        resultIds: merged.map((m: any) => m.id),
+        durationMs: Date.now() - started,
+        source: "web",
+      });
+
       return json({
         requestedMode, effectiveMode: "hybrid", fallback: null,
         memories: merged,
@@ -532,7 +540,9 @@ const app = new Elysia()
       if (requestedMode === "semantic") {
         return json({ error: "semantic_unavailable", message: reason }, 503);
       }
-      const memories = await searchMemories({ query, ...common, tag: body.tag });
+      // Logged as keyword, not hybrid, because keyword is what actually ran —
+      // the fallback reason is in the response for the caller to see.
+      const memories = await searchMemories({ query, ...common, tag: body.tag, source: "web" });
       return json({
         requestedMode, effectiveMode: "keyword",
         fallback: { used: true, reason }, memories,

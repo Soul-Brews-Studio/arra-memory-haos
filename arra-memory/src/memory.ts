@@ -1,4 +1,5 @@
 import { db, ensureSchema, firstRow, rows } from "./db";
+import { recordSearch } from "./searchlog";
 import { MEMORIES } from "./sql";
 import {
   clampLimit,
@@ -58,6 +59,8 @@ export interface SearchMemoryInput {
   /** Substring match within the JSON tags array. */
   tag?: string;
   limit?: number;
+  /** Where the search came from — "mcp", "web". Recorded in the log. */
+  source?: string;
 }
 
 export interface MemoryStats {
@@ -149,7 +152,55 @@ function ftsPhrase(query: string): string {
   return `"${query.replace(/"/g, '""')}"`;
 }
 
+/**
+ * Every search records itself.
+ *
+ * The recording lives INSIDE the search functions, not at their call sites.
+ * There are six ways to reach a search — recall_memories, each generated
+ * project tool, every time-window tool, search_memories_between, the web API,
+ * and hybrid recall — and a log wired up at call sites is one forgotten call
+ * away from answering "what did I search for" with a confident, partial lie.
+ *
+ * Put it where the search actually happens and no caller can omit it.
+ */
+async function logged<T extends { id: string }>(
+  run: () => Promise<T[]>,
+  meta: { query?: string; mode: string; kind?: string; project?: string; tag?: string; source?: string },
+): Promise<T[]> {
+  const started = Date.now();
+  const results = await run();
+  // Fire-and-forget. The caller already has its answer, and searchlog.ts
+  // swallows every failure — observability must not cost the thing observed.
+  void recordSearch({
+    ...meta,
+    resultIds: results.map((r) => r.id),
+    durationMs: Date.now() - started,
+    source: meta.source ?? "internal",
+  });
+  return results;
+}
+
 export async function searchMemories(
+  input: SearchMemoryInput = {},
+): Promise<Memory[]> {
+  return logged(() => searchMemoriesNoLog(input), {
+    query: input.query,
+    mode: "keyword",
+    kind: input.kind,
+    project: input.project,
+    tag: input.tag,
+    source: input.source,
+  });
+}
+
+/**
+ * The same search without recording, for composing internally.
+ *
+ * Hybrid recall runs a keyword AND a semantic pass for ONE user action; if both
+ * logged themselves the log would double-count every hybrid search. The caller
+ * that composes them logs once, as "hybrid".
+ */
+export async function searchMemoriesNoLog(
   input: SearchMemoryInput = {},
 ): Promise<Memory[]> {
   await ensureSchema();
@@ -358,6 +409,22 @@ export async function searchInRange(input: {
   toIso: string;
   query?: string;
   limit?: number;
+  /** What window this was, for the log — e.g. "the last 3 weeks". */
+  label?: string;
+  source?: string;
+}): Promise<Memory[]> {
+  return logged(() => searchInRangeUnlogged(input), {
+    query: input.query,
+    mode: input.label ? `window:${input.label}` : "range",
+    source: input.source,
+  });
+}
+
+async function searchInRangeUnlogged(input: {
+  fromIso: string;
+  toIso: string;
+  query?: string;
+  limit?: number;
 }): Promise<Memory[]> {
   await ensureSchema();
   const query = (input.query ?? "").trim().slice(0, 240);
@@ -423,6 +490,27 @@ export interface SemanticResult {
 
 /** Nearest neighbours. Throws only if embedding the QUERY fails. */
 export async function searchSemantic(input: {
+  query: string;
+  kind?: MemoryKind;
+  project?: string;
+  limit?: number;
+  source?: string;
+}): Promise<SemanticResult> {
+  const started = Date.now();
+  const result = await searchSemanticNoLog(input);
+  void recordSearch({
+    query: input.query,
+    mode: "semantic",
+    kind: input.kind,
+    project: input.project,
+    resultIds: result.memories.map((m) => m.id),
+    durationMs: Date.now() - started,
+    source: input.source ?? "internal",
+  });
+  return result;
+}
+
+export async function searchSemanticNoLog(input: {
   query: string;
   kind?: MemoryKind;
   project?: string;

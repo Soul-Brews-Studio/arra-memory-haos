@@ -215,6 +215,17 @@ Result **ids** are stored, result **content** is not — the memories are in the
 table next door, and copying their text would double the blast radius of a leak
 for nothing.
 
+Every search records itself, from every route: `recall_memories`, each generated
+project tool, every time window, `search_memories_between`, the web UI, and
+hybrid recall. The recording lives **inside the search functions**, not at their
+call sites — there are seven ways to reach a search, and a log wired up per
+caller is one forgotten call away from answering "what did I search for" with a
+confident, partial lie.
+
+The `mode` column records what actually ran, not what was asked for: a hybrid
+search that degraded to keyword is logged as `keyword`, because that is the
+search that happened.
+
 | Tool | Does |
 |---|---|
 | `list_search_log` | Recent searches, optionally filtered by query substring |

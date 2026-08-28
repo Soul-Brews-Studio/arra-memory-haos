@@ -17,7 +17,6 @@ import {
   deleteSearchLogEntry,
   listSearchLog,
   pruneSearchLog,
-  recordSearch,
   searchLogStats,
 } from "./searchlog";
 import { disabledTools } from "./tools";
@@ -429,7 +428,10 @@ async function callTool(name: string, args: Record<string, any>) {
         toIso: range.toIso,
         query: args.query,
         limit: args.limit ?? 20,
+        label: range.label,
+        source: "mcp",
       });
+
       const body = memories.length
         ? memories.map((m, i) => `${i + 1}. ${render(m)}`).join("\n\n")
         : `No memories from ${range.label}${args.query ? ` matching “${args.query}”` : ""}.`;
@@ -584,6 +586,8 @@ async function callTool(name: string, args: Record<string, any>) {
         toIso: to.toISOString(),
         query: args.query,
         limit: args.limit ?? 20,
+        label: `${args.from} to ${args.to}`,
+        source: "mcp",
       });
       const body = memories.length
         ? memories.map((m, i) => `${i + 1}. ${render(m)}`).join("\n\n")
@@ -606,27 +610,15 @@ async function callTool(name: string, args: Record<string, any>) {
 }
 
 async function recall(args: Record<string, any>) {
-  const started = Date.now();
   const memories = await searchMemories({
     query: args.query,
     kind: args.kind as MemoryKind | undefined,
     project: args.project,
     tag: args.tag,
     limit: args.limit ?? 10,
-  });
-
-  // Fire-and-forget: the results are already computed and the caller is
-  // waiting. See searchlog.ts for why this can never throw.
-  void recordSearch({
-    query: args.query,
-    mode: "keyword",
-    kind: args.kind,
-    project: args.project,
-    tag: args.tag,
-    resultIds: memories.map((m) => m.id),
-    durationMs: Date.now() - started,
     source: "mcp",
   });
+
 
   const scope = [
     args.project && `project “${args.project}”`,
