@@ -3,6 +3,7 @@ import { ApiError, api } from "./api";
 import { KindFilter, MemoryCard, useSlashFocus } from "./components";
 import { SearchLog } from "./SearchLog";
 import { Tools } from "./Tools";
+import { Menu } from "./Menu";
 import { MEMORY_KINDS, type Health, type Memory, type MemoryKind, type MemoryStats } from "./types";
 
 type Phase = "checking" | "locked" | "ready";
@@ -89,36 +90,32 @@ export default function App() {
               >
                 Remember
               </button>
-              <button
-                type="button"
-                onClick={() => setShowTools(true)}
-                className="rounded-lg border border-line px-3 py-1.5 font-mono text-xs text-dim transition hover:border-line-bright hover:text-ink"
-                title="Which MCP tools this connector offers"
-              >
-                tools
-              </button>
-              {health?.features.searchLog && (
-                <button
-                  type="button"
-                  onClick={() => setShowLog(true)}
-                  className="rounded-lg border border-line px-3 py-1.5 font-mono text-xs text-dim transition hover:border-line-bright hover:text-ink"
-                  title="What has been searched for"
-                >
-                  log
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() =>
-                  api.session.close().finally(() => {
-                    setPhase("locked");
-                    setMemories([]);
-                  })
-                }
-                className="rounded-lg border border-line px-3 py-1.5 font-mono text-xs text-dim transition hover:border-line-bright hover:text-ink"
-              >
-                lock
-              </button>
+              <Menu
+                items={[
+                  {
+                    label: "MCP tools",
+                    hint: "What this connector offers, and what to switch off",
+                    onSelect: () => setShowTools(true),
+                  },
+                  ...(health?.features.searchLog
+                    ? [{
+                        label: "Search log",
+                        hint: "What has been looked for",
+                        onSelect: () => setShowLog(true),
+                      }]
+                    : []),
+                  {
+                    label: "Lock the archive",
+                    hint: "End this session",
+                    danger: true,
+                    onSelect: () =>
+                      void api.session.close().finally(() => {
+                        setPhase("locked");
+                        setMemories([]);
+                      }),
+                  },
+                ]}
+              />
             </div>
           </div>
 

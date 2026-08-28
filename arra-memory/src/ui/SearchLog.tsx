@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { timeAgo } from "./components";
+import { Panel } from "./Menu";
 import type { SearchLogEntry, SearchLogStats } from "./types";
 
 /**
- * The search log, as a drawer over the archive.
+ * The search log.
  *
  * It shows the query text, because that is what makes the log worth having and
  * also what makes it worth deleting — so every destructive control is one click
@@ -57,96 +58,73 @@ export function SearchLog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search log"
-        className="flex h-full w-full max-w-2xl flex-col border-l border-line bg-panel"
-      >
-        <header className="border-b border-line px-5 py-4">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <p className="eyebrow mb-1">Search log</p>
-              <h2 className="text-lg font-semibold tracking-tight">What was looked for</h2>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close the search log"
-              className="rounded p-1.5 text-faint transition-colors hover:text-ink"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-
-          {stats && !stats.enabled ? (
-            <p className="rounded-lg border border-line bg-raised px-3 py-2 text-sm text-dim">
-              Recording is off. Turn on <code className="font-mono text-ember">search_log</code> in
-              this add-on’s configuration to start keeping a record.
-            </p>
-          ) : (
-            <>
-              <input
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter by what was searched…"
-                aria-label="Filter the search log"
-                className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
-              />
-              <div className="meta mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span>
-                  {busy ? "loading…" : `${entries.length} shown`}
-                  {stats ? ` · ${stats.total} recorded` : ""}
+    <Panel
+      eyebrow="Search log"
+      title="What was looked for"
+      subtitle={
+        stats && !stats.enabled
+          ? "Recording is off. Turn on search_log in this add-on's configuration to start keeping a record."
+          : undefined
+      }
+      onClose={onClose}
+      actions={
+        stats?.enabled ? (
+          <>
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter by what was searched…"
+              aria-label="Filter the search log"
+              className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
+            />
+            <div className="meta mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span>
+                {busy ? "loading…" : `${entries.length} shown`}
+                {stats ? ` · ${stats.total} recorded` : ""}
+              </span>
+              <span className="flex-1" />
+              <button
+                type="button"
+                disabled={busy || !entries.length}
+                onClick={() => act(() => api.searchLog.prune(30))}
+                className="rounded border border-line px-2 py-1 transition-colors hover:border-ember hover:text-ember disabled:opacity-40"
+              >
+                prune &gt; 30 days
+              </button>
+              {confirming === "all" ? (
+                <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => act(() => api.searchLog.clear())}
+                    className="rounded bg-[#5c2320] px-2 py-1 text-[#f0928f]"
+                  >
+                    delete all {stats?.total ?? ""}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(null)}
+                    className="rounded px-2 py-1 text-dim hover:text-ink"
+                  >
+                    keep
+                  </button>
                 </span>
-                <span className="flex-1" />
-                {/* Destructive controls state their scope before acting. */}
+              ) : (
                 <button
                   type="button"
                   disabled={busy || !entries.length}
-                  onClick={() => act(() => api.searchLog.prune(30))}
-                  className="rounded border border-line px-2 py-1 transition-colors hover:border-ember hover:text-ember disabled:opacity-40"
+                  onClick={() => setConfirming("all")}
+                  className="rounded border border-line px-2 py-1 transition-colors hover:border-[#f0928f] hover:text-[#f0928f] disabled:opacity-40"
                 >
-                  prune &gt; 30 days
+                  clear all
                 </button>
-                {confirming === "all" ? (
-                  <span className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => act(() => api.searchLog.clear())}
-                      className="rounded bg-[#5c2320] px-2 py-1 text-[#f0928f]"
-                    >
-                      delete all {stats?.total ?? ""}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirming(null)}
-                      className="rounded px-2 py-1 text-dim hover:text-ink"
-                    >
-                      keep
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={busy || !entries.length}
-                    onClick={() => setConfirming("all")}
-                    className="rounded border border-line px-2 py-1 transition-colors hover:border-[#f0928f] hover:text-[#f0928f] disabled:opacity-40"
-                  >
-                    clear all
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </header>
+              )}
+            </div>
+          </>
+        ) : undefined
+      }
+    >
+      <>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
           {error && (
             <p role="alert" className="mb-3 rounded-lg border border-[#5c2320] bg-[#2a1614] px-3 py-2 text-sm text-[#f0928f]">
               {error}
@@ -213,8 +191,7 @@ export function SearchLog({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
           )}
-        </div>
-      </aside>
-    </div>
+      </>
+    </Panel>
   );
 }

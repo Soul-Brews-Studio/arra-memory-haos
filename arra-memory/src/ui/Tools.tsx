@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { Panel } from "./Menu";
 import type { ToolInfo } from "./types";
 
 /**
@@ -63,55 +64,29 @@ export function Tools({ onClose }: { onClose: () => void }) {
   const offCount = tools.filter((t) => t.disabled).length;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+    <Panel
+      eyebrow="MCP surface"
+      title={`${tools.length} tools${offCount ? `, ${offCount} off` : ""}`}
+      subtitle="A tool that is off is hidden from clients and refused if called anyway. Nothing is deleted — switch it back on and it returns."
+      onClose={onClose}
+      actions={
+        offCount > 0 ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              await api.tools.enableAll();
+              await load();
+            }}
+            className="meta rounded border border-line px-2 py-1 transition-colors hover:border-ember hover:text-ember"
+          >
+            turn everything back on
+          </button>
+        ) : undefined
+      }
     >
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label="MCP tools"
-        className="flex h-full w-full max-w-2xl flex-col border-l border-line bg-panel"
-      >
-        <header className="border-b border-line px-5 py-4">
-          <div className="mb-2 flex items-start justify-between gap-3">
-            <div>
-              <p className="eyebrow mb-1">MCP surface</p>
-              <h2 className="text-lg font-semibold tracking-tight">
-                {tools.length} tools{offCount ? `, ${offCount} off` : ""}
-              </h2>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close the tool list"
-              className="rounded p-1.5 text-faint transition-colors hover:text-ink"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-          <p className="text-sm text-dim">
-            A tool that is off is hidden from clients and refused if called anyway. Nothing is
-            deleted — switch it back on and it returns.
-          </p>
-          {offCount > 0 && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={async () => {
-                await api.tools.enableAll();
-                await load();
-              }}
-              className="meta mt-3 rounded border border-line px-2 py-1 transition-colors hover:border-ember hover:text-ember"
-            >
-              turn everything back on
-            </button>
-          )}
-        </header>
+      <>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
           {error && (
             <p role="alert" className="mb-3 rounded-lg border border-[#5c2320] bg-[#2a1614] px-3 py-2 text-sm text-[#f0928f]">
               {error}
@@ -132,9 +107,8 @@ export function Tools({ onClose }: { onClose: () => void }) {
             locked={locked}
             onToggle={toggle}
           />
-        </div>
-      </aside>
-    </div>
+      </>
+    </Panel>
   );
 }
 
