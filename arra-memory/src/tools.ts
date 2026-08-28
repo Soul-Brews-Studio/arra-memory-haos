@@ -28,7 +28,21 @@ const KEY = "disabled-tools";
  * generated tools are gone; hiding them turns a narrowed tool list into a dead
  * end. `memory_stats` is the same argument for the corpus as a whole.
  */
-export const UNDISABLEABLE = new Set(["list_projects", "list_tags", "memory_stats"]);
+const PROTECTED: Record<string, string> = {
+  // Discovery. Hiding these turns a narrowed tool list into a dead end — a
+  // model with its generated tools switched off has no way left to find out
+  // what the corpus contains.
+  list_projects: "it is how the corpus is discovered",
+  list_tags: "it is how the corpus is discovered",
+  memory_stats: "it is how the corpus is discovered",
+  // Self-management. Disabling these over MCP removes the only MCP-side way to
+  // switch anything back on: a client could lock itself out of its own
+  // controls and would then need the web UI to recover.
+  list_tools: "it is how tools are switched back on",
+  toggle_tool: "it is how tools are switched back on",
+};
+
+export const UNDISABLEABLE = new Set(Object.keys(PROTECTED));
 
 export async function disabledTools(): Promise<Set<string>> {
   const raw = await kvGet(KEY);
@@ -44,8 +58,8 @@ export async function disabledTools(): Promise<Set<string>> {
 }
 
 export async function setToolDisabled(name: string, disabled: boolean): Promise<Set<string>> {
-  if (disabled && UNDISABLEABLE.has(name)) {
-    throw new Error(`${name} cannot be disabled — it is how the corpus is discovered.`);
+  if (disabled && PROTECTED[name]) {
+    throw new Error(`${name} cannot be disabled — ${PROTECTED[name]}.`);
   }
   const current = await disabledTools();
   if (disabled) current.add(name);

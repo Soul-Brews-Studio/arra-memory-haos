@@ -19,7 +19,7 @@ import {
   pruneSearchLog,
   searchLogStats,
 } from "./searchlog";
-import { disabledTools } from "./tools";
+import { disabledTools, setToolDisabled, UNDISABLEABLE } from "./tools";
 import { RELATIVE_RANGES, resolveRange } from "./timerange";
 import { MEMORY_KINDS, slugify, type MemoryKind } from "./utils";
 
@@ -272,6 +272,36 @@ const BASE_TOOLS = [
       },
     },
     annotations: { destructiveHint: true, idempotentHint: false },
+  },
+  {
+    name: "list_tools",
+    description:
+      "List every tool this connector can offer, whether it is currently enabled, and whether it was generated from the corpus rather than defined in source.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        includeDisabled: {
+          type: "boolean",
+          description: "Include tools that are switched off. Defaults to true.",
+        },
+      },
+    },
+  },
+  {
+    name: "toggle_tool",
+    description:
+      "Switch one tool on or off. A disabled tool is hidden from tools/list and refused if called. Nothing is deleted — re-enabling brings it straight back.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The tool to change." },
+        enabled: {
+          type: "boolean",
+          description: "true to switch on, false to switch off. Omit to flip it.",
+        },
+      },
+      required: ["name"],
+    },
   },
   {
     // The escape hatch behind the generated time tools: any window at all,
@@ -555,6 +585,45 @@ async function callTool(name: string, args: Record<string, any>) {
       return {
         ...text(`Pruned ${removed} search log entries older than ${args.olderThanDays} days (before ${cutoff}).`),
         structuredContent: { deleted: removed, cutoff },
+      };
+    }
+
+    case "list_tools": {
+      const catalog = await toolCatalog();
+      const includeDisabled = args.includeDisabled !== false;
+      const shown = includeDisabled ? catalog : catalog.filter((t: any) => !t.disabled);
+      const line = (t: any) =>
+        `${t.disabled ? "off" : "on "}  ${t.name}${t.generated ? "  (generated)" : ""}${
+          UNDISABLEABLE.has(t.name) ? "  [always on]" : ""
+        }`;
+      return {
+        ...text(
+          `${shown.length} tools\n\n` + shown.map(line).join("\n"),
+        ),
+        structuredContent: { tools: shown, locked: [...UNDISABLEABLE] },
+      };
+    }
+
+    case "toggle_tool": {
+      const target = String(args.name ?? "");
+      const catalog = await toolCatalog();
+      const known = catalog.find((t: any) => t.name === target);
+      if (!known) {
+        return toolError(
+          `No tool named ${target}. Call list_tools to see what exists — generated tools change with the corpus.`,
+        );
+      }
+      // Omitting `enabled` flips it, which is what "toggle" means; passing it
+      // makes the call idempotent for a client that wants a known end state.
+      const enable = args.enabled === undefined ? known.disabled : Boolean(args.enabled);
+      try {
+        await setToolDisabled(target, !enable);
+      } catch (error) {
+        return toolError(error instanceof Error ? error.message : "That tool cannot be changed.");
+      }
+      return {
+        ...text(`${target} is now ${enable ? "enabled" : "disabled"}.`),
+        structuredContent: { name: target, enabled: enable },
       };
     }
 
