@@ -35,6 +35,15 @@ RUN bun install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src/ ./src/
 COPY public/ ./public/
+# scripts/ is part of the BUILD, not just tooling — build:ui runs
+# sync-version.ts out of it. Omitting it fails the image build with
+# "Module not found", which Supervisor then reports as a successful update
+# that quietly leaves the previous version installed.
+COPY scripts/ ./scripts/
+# config.yaml is a BUILD INPUT, not just Supervisor's manifest: sync-version.ts
+# reads the version out of it so the running server can state which build it is.
+# It is the single source of truth precisely because Supervisor reads it too.
+COPY config.yaml ./config.yaml
 
 # The React bundle and the stylesheet are built into the image, never shipped
 # in git — a built asset in a repo is a merge conflict waiting to happen.
