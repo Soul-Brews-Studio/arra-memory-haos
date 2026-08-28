@@ -1,5 +1,5 @@
 name: "Arra Memory"
-version: "0.10.1"
+version: "0.10.2"
 slug: "arra_memory"
 description: >-
   A durable memory corpus that lives in your Home Assistant sidebar and answers
@@ -7,6 +7,19 @@ description: >-
   the add-on's own /data, so they survive restarts and ride along in Home
   Assistant's backups.
 url: "https://github.com/Soul-Brews-Studio/arra-memory-haos/tree/main/arra-memory"
+
+# Prebuilt, not built on your Home Assistant host.
+#
+# Without this, Supervisor builds the add-on locally on every install: the
+# Alpine base plus a ~90MB bun tarball over whatever connection that host has.
+# It also reports a FAILED build as a successful update and leaves the old
+# version running, because it reports the request rather than the result.
+#
+# {arch} is substituted by Supervisor. Both images are published public by
+# .github/workflows/builder.yml on every push touching this add-on, and both
+# were confirmed anonymously pullable before this line was added — pointing at
+# a tag that does not exist breaks the installed add-on rather than the install.
+image: "ghcr.io/soul-brews-studio/{arch}-addon-arra_memory"
 arch:
   - amd64
   - aarch64
