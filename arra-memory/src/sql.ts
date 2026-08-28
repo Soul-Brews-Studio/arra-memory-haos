@@ -331,6 +331,28 @@ export const MEMORIES = {
                     SELECT 1 FROM json_each(memories.tags) WHERE value = ?
                   )`,
 
+  /**
+   * Every memory that carries a vector, with the vector.
+   *
+   * The one query in this file that returns embeddings to the application. It
+   * exists because the graph needs the raw vectors twice — once to project them
+   * to three dimensions and once for all-pairs similarity — and reading them
+   * back per pair through `vector_distance_cos` would be N²/2 round trips to
+   * compute something already in memory.
+   *
+   * Ordered by importance so a LIMIT keeps the memories most worth seeing rather
+   * than an arbitrary slice. args: limit
+   */
+  embedded: `SELECT id, title, content, kind, workspace, project, created_by,
+                    importance, created_at, embedding
+               FROM memories
+              WHERE embedding IS NOT NULL
+              ORDER BY importance DESC, updated_at DESC
+              LIMIT ?`,
+
+  /** Total memories, so the graph can say how many it had to leave out. */
+  countAll: `SELECT COUNT(*) AS n FROM memories`,
+
   /** Distinct kinds with counts — the chip row, and what merge is chosen from. */
   kinds: `SELECT kind, COUNT(*) AS count
             FROM memories

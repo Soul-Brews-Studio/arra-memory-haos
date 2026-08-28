@@ -48,6 +48,30 @@ const STRINGS = {
   },
   "nav.lock.title": { th: "จบ session นี้", en: "End this session" },
 
+  "nav.atlas": { th: "\u0e41\u0e1c\u0e19\u0e17\u0e35\u0e48", en: "Atlas" },
+  "nav.atlas.title": {
+    th: "\u0e04\u0e25\u0e31\u0e07\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14\u0e40\u0e1b\u0e47\u0e19\u0e23\u0e39\u0e1b",
+    en: "The whole corpus, drawn",
+  },
+  "atlas.title": { th: "\u0e41\u0e1c\u0e19\u0e04\u0e27\u0e32\u0e21\u0e08\u0e33", en: "The atlas" },
+  "atlas.subtitle": {
+    th: "\u0e15\u0e33\u0e41\u0e2b\u0e19\u0e48\u0e07\u0e21\u0e32\u0e08\u0e32\u0e01 embedding \u2014 \u0e2d\u0e22\u0e39\u0e48\u0e43\u0e01\u0e25\u0e49\u0e01\u0e31\u0e19\u0e04\u0e37\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e2b\u0e21\u0e32\u0e22\u0e43\u0e01\u0e25\u0e49\u0e01\u0e31\u0e19 \u0e25\u0e32\u0e01\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e2b\u0e21\u0e38\u0e19 \u0e40\u0e25\u0e37\u0e48\u0e2d\u0e19\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e0b\u0e39\u0e21 \u0e01\u0e14\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e40\u0e1b\u0e34\u0e14",
+    en: "Positions come from the embeddings — near means similar. Drag to turn, scroll to zoom, click to open.",
+  },
+  "atlas.map": { th: "\u0e41\u0e1c\u0e19", en: "map" },
+  "atlas.web": { th: "\u0e43\u0e22", en: "web" },
+  "atlas.explained": { th: "\u0e2d\u0e18\u0e34\u0e1a\u0e32\u0e22\u0e44\u0e14\u0e49", en: "explains" },
+  "atlas.density": { th: "\u0e04\u0e27\u0e32\u0e21\u0e2b\u0e19\u0e32\u0e41\u0e19\u0e48\u0e19", en: "density" },
+  "atlas.unembedded": { th: "\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35\u0e40\u0e27\u0e01\u0e40\u0e15\u0e2d\u0e23\u0e4c", en: "without a vector" },
+  "atlas.empty": {
+    th: "\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35\u0e04\u0e27\u0e32\u0e21\u0e08\u0e33\u0e17\u0e35\u0e48\u0e21\u0e35 embedding \u2014 \u0e40\u0e1b\u0e34\u0e14 semantic search \u0e01\u0e48\u0e2d\u0e19",
+    en: "No memories carry a vector yet — semantic search has to be on for the atlas to have anything to draw.",
+  },
+  "atlas.denseWarning": {
+    th: "\u0e40\u0e2a\u0e49\u0e19\u0e40\u0e0a\u0e37\u0e48\u0e2d\u0e21\u0e40\u0e01\u0e37\u0e2d\u0e1a\u0e17\u0e38\u0e01\u0e04\u0e39\u0e48 \u2014 \u0e04\u0e25\u0e31\u0e07\u0e22\u0e31\u0e07\u0e40\u0e25\u0e47\u0e01\u0e40\u0e01\u0e34\u0e19\u0e01\u0e27\u0e48\u0e32\u0e08\u0e30\u0e40\u0e2b\u0e47\u0e19\u0e42\u0e04\u0e23\u0e07\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e08\u0e32\u0e01\u0e40\u0e2a\u0e49\u0e19\u0e44\u0e14\u0e49 \u0e43\u0e0a\u0e49\u0e21\u0e38\u0e21\u0e41\u0e1c\u0e19\u0e41\u0e17\u0e19",
+    en: "Nearly every pair is an edge — the corpus is still too small for the web to show structure. The map carries the same information without the tangle.",
+  },
+
   // ── archive
   "archive.eyebrow": { th: "ARRA MEMORY", en: "ARRA MEMORY" },
   "archive.title": { th: "คลังความจำ", en: "The archive" },
@@ -94,6 +118,7 @@ const STRINGS = {
   "compose.cancel": { th: "ยกเลิก", en: "Cancel" },
   "compose.save": { th: "จำไว้", en: "Remember" },
   "compose.saving": { th: "กำลังบันทึก…", en: "Saving…" },
+  "compose.saveFailed": { th: "บันทึกไม่สำเร็จ", en: "Could not save." },
 
   // ── lock screen
   "lock.title": { th: "คลังถูกล็อกอยู่", en: "The archive is locked" },
@@ -145,7 +170,37 @@ export function initialLang(): Lang {
   } catch {
     // A browser with storage blocked still gets an interface, in Thai.
   }
-  return "th";
+  return serverDefault;
+}
+
+/**
+ * The add-on owner's default, from `language` in the add-on configuration.
+ *
+ * Applied only when this browser has expressed no preference — an explicit
+ * `?lang=` or a previous choice always wins. The distinction matters because
+ * these are different people: the owner sets what a FIRST visit looks like, the
+ * visitor sets what THEIR visits look like, and neither should overrule the
+ * other. Arrives after the first paint (health is a fetch), so it only takes
+ * effect for someone who has never chosen.
+ */
+let serverDefault: Lang = "th";
+
+export function applyServerDefaultLang(lang: string | undefined): void {
+  if (lang !== "th" && lang !== "en") return;
+  serverDefault = lang;
+  let chosen = false;
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    chosen = stored === "th" || stored === "en" ||
+      new URLSearchParams(window.location.search).has("lang");
+  } catch {
+    /* storage blocked; treat as unchosen */
+  }
+  if (!chosen && current !== lang) {
+    current = lang;
+    try { document.documentElement.setAttribute("lang", lang); } catch { /* ignore */ }
+    for (const fn of listeners) fn(lang);
+  }
 }
 
 let current: Lang = typeof window === "undefined" ? "th" : initialLang();

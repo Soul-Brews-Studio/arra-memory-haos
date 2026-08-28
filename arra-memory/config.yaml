@@ -1,5 +1,5 @@
 name: "Arra Memory"
-version: "0.12.0"
+version: "0.14.1"
 slug: "arra_memory"
 description: >-
   A durable memory corpus that lives in your Home Assistant sidebar and answers
@@ -101,6 +101,11 @@ options:
   # still answered from disk, no network in the hot path — while libSQL
   # replicates against Turso in the background. The point is survival: catlab
   # can be lost entirely and the corpus is still in Turso.
+  # The DEFAULTS the interface opens with, set by whoever runs the add-on.
+  # A browser that has chosen otherwise keeps its choice — these decide what a
+  # first visit looks like, not what anyone is stuck with.
+  language: "th"
+  theme: "slate"
   turso_sync_url: ""
   turso_auth_token: ""
   # Seconds between syncs. Low enough that another client sees a write soon,
@@ -118,6 +123,8 @@ schema:
   embedding_model: str
   embedding_dimensions: int
   search_log: bool
+  language: "list(th|en)?"
+  theme: "list(slate|ember|moss|iris|mono|paper)?"
   turso_sync_url: str
   turso_auth_token: password
   turso_sync_interval: int

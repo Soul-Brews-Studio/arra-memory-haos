@@ -80,6 +80,22 @@ export interface Scope {
   createdBy: string[];
 }
 
+/**
+ * The graph shapes come from the SERVER's definitions, not a copy of them.
+ *
+ * They used to be hand-written mirrors of `src/graph.ts`, and that duplication
+ * is exactly why a server-side change went undetected: `GraphEdge.bridge`
+ * became `GraphEdge.kind`, both files stayed internally consistent, `tsc` was
+ * clean on both sides, and every edge would have drawn as the wrong type at
+ * runtime. A mirror is a contract that only a human is checking.
+ *
+ * `import type` is erased at compile time, so this pulls in no server code and
+ * nothing from libSQL reaches the browser bundle — it is a compile-time link
+ * only. Now a shape change breaks the UI build immediately, which is the whole
+ * point of having a compiler.
+ */
+export type { Graph, GraphEdge, GraphNode, EdgeKind } from "../graph";
+
 export const EMPTY_SCOPE: Scope = { kind: [], workspace: [], project: [], createdBy: [] };
 
 export interface MemoryStats {
@@ -127,6 +143,8 @@ export interface Health {
   status: string;
   service: string;
   version: string;
+  /** What the add-on's own configuration says a first visit should look like. */
+  defaults?: { language: string; theme: string };
   features: {
     semantic: boolean;
     embeddingModel: string | null;

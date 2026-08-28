@@ -50,6 +50,7 @@ import {
 } from "./searchlog";
 import { escapeHtml, readCookie, timingSafeEqual, type MemoryKind } from "./utils";
 import { buildDigest, digestWindows } from "./digest";
+import { buildGraph } from "./graph";
 import { ensureSchema, replicaStatus } from "./db";
 import { VERSION } from "./version";
 
@@ -206,6 +207,13 @@ const app = new Elysia()
     status: "ok",
     service: "arra-memory",
     version: VERSION,
+    // The add-on owner's defaults for language and palette. On /api/health
+    // because the UI fetches that before unlocking — the lock screen itself
+    // should already be in the right language, and it has nothing else to ask.
+    defaults: {
+      language: (process.env.LANGUAGE || "th").trim(),
+      theme: (process.env.THEME || "slate").trim(),
+    },
     // What is switched on, without revealing any of it. Enough to tell a
     // misconfigured deploy from a broken one at a glance.
     features: {
@@ -517,6 +525,28 @@ const app = new Elysia()
         400,
       );
     }
+  })
+
+  /**
+   * The corpus as geometry — points from the embeddings, edges from mutual kNN.
+   *
+   * Positions are computed here rather than in the browser because the vectors
+   * are 1024-dimensional and there is no reason to send 4KB per memory to a
+   * client that only needs three numbers from each.
+   */
+  .get("/api/graph", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const url = new URL(request.url);
+    return json(
+      await buildGraph({
+        kind: url.searchParams.getAll("kind"),
+        workspace: url.searchParams.getAll("workspace"),
+        project: url.searchParams.getAll("project"),
+        createdBy: url.searchParams.getAll("createdBy"),
+        limit: Number(url.searchParams.get("limit")) || undefined,
+      }),
+    );
   })
 
   // Every chip row in one request. The archive draws its whole filter bar from

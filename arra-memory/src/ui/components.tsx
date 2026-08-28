@@ -79,10 +79,13 @@ export function MemoryCard({
   memory,
   query,
   onDelete,
+  onFollow,
 }: {
   memory: Memory;
   query: string;
   onDelete: (id: string) => void;
+  /** Follow a [[reference]] in the body. Omit and links render as plain text. */
+  onFollow?: (title: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -118,7 +121,7 @@ export function MemoryCard({
             className={`prose-memory ${open || !long ? "" : "line-clamp-3"}`}
             id={`memory-body-${memory.id}`}
           >
-            {memory.content}
+            <Linked text={memory.content} onFollow={onFollow} />
           </div>
 
           {long && (
@@ -233,6 +236,57 @@ function Provenance({
       {label}
     </span>
   );
+}
+
+/**
+ * Renders `[[a reference]]` as something you can click.
+ *
+ * The notation is the vault's, unchanged — every learning in ψ/ already links
+ * this way, so a memory imported from a file arrives with working links and
+ * nothing had to be converted. Following one searches for that title, which is
+ * the same path the graph's link edges take, so the two views agree about what
+ * a link means.
+ *
+ * A link to a memory that does not exist still renders as a link. That is not
+ * an oversight: writing the reference before the memory is how a corpus grows,
+ * and greying out the ones that "do not resolve yet" would punish exactly the
+ * habit worth having. Clicking a dangling one searches and finds nothing, which
+ * is the honest answer.
+ */
+function Linked({ text, onFollow }: { text: string; onFollow?: (title: string) => void }) {
+  if (!onFollow || !text.includes("[[")) return <>{text}</>;
+
+  const parts: React.ReactNode[] = [];
+  const pattern = /\[\[([^\]|]{1,160})(?:\|([^\]]*))?\]\]/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    const target = match[1]!.trim();
+    const label = (match[2] ?? match[1]!).trim();
+    parts.push(
+      <button
+        key={`link-${key++}`}
+        type="button"
+        onClick={(e) => {
+          // The card body is inside an expandable region; a link click must not
+          // also toggle whatever it is nested in.
+          e.stopPropagation();
+          onFollow(target);
+        }}
+        className="underline decoration-dotted underline-offset-2 transition-colors hover:decoration-solid"
+        style={{ color: "var(--color-ember)" }}
+        title={target}
+      >
+        {label}
+      </button>,
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
 }
 
 /** Marks the searched substring so a hit is visibly a hit. */

@@ -2,6 +2,7 @@ import type {
   AgentFacet,
   EmbeddingCoverage,
   Facets,
+  Graph,
   Health,
   Memory,
   MemoryKind,
@@ -119,6 +120,17 @@ export const api = {
       call<{ id: string; deleted: boolean }>(`/api/memories/${id}`, {
         method: "DELETE",
       }),
+  },
+
+  /** The corpus as geometry — points from embeddings, edges from mutual kNN. */
+  graph: (scope: { kind?: string[]; workspace?: string[]; project?: string[]; createdBy?: string[] }) => {
+    const q = new URLSearchParams();
+    for (const [key, values] of [
+      ["kind", scope.kind], ["workspace", scope.workspace],
+      ["project", scope.project], ["createdBy", scope.createdBy],
+    ] as const) for (const v of values ?? []) if (v) q.append(key, v);
+    const qs = q.toString();
+    return call<Graph>(`/api/graph${qs ? `?${qs}` : ""}`);
   },
 
   /** Every chip row, in one request. */

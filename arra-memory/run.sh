@@ -16,6 +16,8 @@ OLLAMA_URL="$(bashio::config 'ollama_url')"
 EMBEDDING_MODEL="$(bashio::config 'embedding_model')"
 EMBEDDING_DIMENSIONS="$(bashio::config 'embedding_dimensions')"
 SEARCH_LOG="$(bashio::config 'search_log')"
+LANGUAGE="$(bashio::config 'language')"
+THEME="$(bashio::config 'theme')"
 TURSO_SYNC_URL="$(bashio::config 'turso_sync_url')"
 TURSO_AUTH_TOKEN="$(bashio::config 'turso_auth_token')"
 TURSO_SYNC_INTERVAL="$(bashio::config 'turso_sync_interval')"
@@ -52,6 +54,8 @@ export OLLAMA_URL
 export EMBEDDING_MODEL
 export EMBEDDING_DIMENSIONS
 export SEARCH_LOG
+export LANGUAGE
+export THEME
 export TURSO_SYNC_URL
 export TURSO_AUTH_TOKEN
 export TURSO_SYNC_INTERVAL

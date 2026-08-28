@@ -88,7 +88,28 @@ export function initialTheme(): string {
   } catch {
     // Storage blocked. The default still renders.
   }
-  return DEFAULT_THEME;
+  return serverDefault;
+}
+
+/**
+ * The add-on owner's default palette, from `theme` in the add-on configuration.
+ *
+ * Same rule as language: it decides what a first visit looks like and never
+ * overrules a browser that has already chosen.
+ */
+let serverDefault = DEFAULT_THEME;
+
+export function applyServerDefaultTheme(id: string | undefined): void {
+  if (!isKnown(id ?? null)) return;
+  serverDefault = id!;
+  let chosen = false;
+  try {
+    chosen = isKnown(window.localStorage.getItem(STORAGE_KEY)) ||
+      new URLSearchParams(window.location.search).has("theme");
+  } catch {
+    /* storage blocked; treat as unchosen */
+  }
+  if (!chosen && current !== id) setTheme(id!);
 }
 
 let current = typeof window === "undefined" ? DEFAULT_THEME : initialTheme();

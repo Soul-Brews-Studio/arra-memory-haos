@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "./api";
 import { MemoryCard, useSlashFocus } from "./components";
 import { Chips } from "./Chips";
+import { Atlas } from "./Atlas";
 import { SearchLog } from "./SearchLog";
 import { Tools } from "./Tools";
 import { Workspaces } from "./Workspaces";
 import { NavBar, Panel } from "./Menu";
 import { EMPTY_ROUTE, useRoute, type View } from "./route";
-import { t, useLang } from "./i18n";
+import { applyServerDefaultLang, t, useLang } from "./i18n";
+import { applyServerDefaultTheme } from "./theme";
 import {
   EMPTY_SCOPE,
   SUGGESTED_KINDS,
@@ -68,7 +70,17 @@ export default function App() {
   // Public endpoint, so this runs before unlocking — the footer can state the
   // build and what is switched on even at the lock screen.
   useEffect(() => {
-    api.health().then(setHealth).catch(() => {});
+    api.health()
+      .then((h) => {
+        setHealth(h);
+        // The owner's configured defaults, applied only if this browser has
+        // never chosen. Deliberately after the first paint rather than blocking
+        // it: a slow health call must not leave the page blank, and someone who
+        // has already picked a language sees no flicker because nothing changes.
+        applyServerDefaultLang(h.defaults?.language);
+        applyServerDefaultTheme(h.defaults?.theme);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -97,7 +109,7 @@ export default function App() {
         setPhase("locked");
         return;
       }
-      setError(err instanceof Error ? err.message : "Could not load memories.");
+      setError(err instanceof Error ? err.message : t("error.load"));
     } finally {
       setLoading(false);
     }
@@ -140,6 +152,13 @@ export default function App() {
         // and neither showed both. The scope bar above the list does the job in
         // one click, and `#/workspaces` still resolves for anything that linked
         // to it.
+        {
+          label: t("nav.atlas"),
+          title: t("nav.atlas.title"),
+          weight: 20,
+          active: view === "atlas",
+          onSelect: () => setView("atlas"),
+        },
         ...(health?.features.searchLog
           ? [{
               label: t("nav.searchLog"),
@@ -177,7 +196,19 @@ export default function App() {
   // place. The archive used to build its own header, which is how its menu
   // drifted from the rest.
   const body =
-    view === "workspaces" ? (
+    view === "atlas" ? (
+      <Atlas
+        onClose={() => setView("archive")}
+        nav={nav}
+        // The drawing shows what the archive is showing — the chips filter both.
+        scope={scope}
+        onOpenMemory={(id) => {
+          // Clicking a point searches for that memory's id, which is the one
+          // query guaranteed to return exactly it and nothing else.
+          navigate({ ...EMPTY_ROUTE, view: "archive", query: id });
+        }}
+      />
+    ) : view === "workspaces" ? (
       <Workspaces
         onClose={() => setView("archive")}
         nav={nav}
@@ -235,6 +266,10 @@ export default function App() {
         loading={loading}
         error={error}
         onCompose={() => setComposing(true)}
+        // Following a [[reference]] searches for its title — the same resolution
+        // the graph's link edges use, so clicking a link in the text and
+        // clicking the matching edge in the atlas land in the same place.
+        onFollow={(title) => navigate({ ...EMPTY_ROUTE, view: "archive", query: title })}
         onForget={async (id) => {
           // Optimistic: the row disappears immediately, and a failure puts it
           // back rather than leaving the UI lying.
@@ -245,7 +280,7 @@ export default function App() {
             void load();
           } catch {
             setMemories(previous);
-            setError("Could not forget that memory.");
+            setError(t("error.forget"));
           }
         }}
       />
@@ -298,6 +333,7 @@ function Archive({
   error,
   onCompose,
   onForget,
+  onFollow,
 }: {
   nav: React.ReactNode;
   query: string;
@@ -313,6 +349,7 @@ function Archive({
   error: string | null;
   onCompose: () => void;
   onForget: (id: string) => void;
+  onFollow: (title: string) => void;
 }) {
   const scoped =
     tags.length > 0 ||
@@ -393,7 +430,13 @@ function Archive({
       ) : (
         <div className="flex flex-col gap-3">
           {memories.map((memory) => (
-            <MemoryCard key={memory.id} memory={memory} query={query} onDelete={onForget} />
+            <MemoryCard
+              key={memory.id}
+              memory={memory}
+              query={query}
+              onDelete={onForget}
+              onFollow={onFollow}
+            />
           ))}
         </div>
       )}
@@ -418,7 +461,7 @@ function Footer({ health }: { health: Health | null }) {
 function Splash() {
   return (
     <div className="grid min-h-screen place-items-center">
-      <p className="eyebrow">opening the archive…</p>
+      <p className="eyebrow">{t("lock.splash")}</p>
     </div>
   );
 }
@@ -439,7 +482,7 @@ function Lock({ onOpen }: { onOpen: () => void }) {
             await api.session.open(passphrase);
             onOpen();
           } catch {
-            setError("That passphrase does not match.");
+            setError(t("lock.wrong"));
           } finally {
             setBusy(false);
           }
@@ -449,13 +492,11 @@ function Lock({ onOpen }: { onOpen: () => void }) {
         <p className="eyebrow mb-4" style={{ color: "var(--color-ember)" }}>
           Arra Memory
         </p>
-        <h1 className="mb-2 text-xl font-semibold tracking-tight">The archive is locked</h1>
-        <p className="mb-6 text-sm text-dim">
-          Enter the owner passphrase set in this add-on’s configuration.
-        </p>
+        <h1 className="mb-2 text-xl font-semibold tracking-tight">{t("lock.title")}</h1>
+        <p className="mb-6 text-sm text-dim">{t("lock.hint")}</p>
 
         <label htmlFor="passphrase" className="eyebrow mb-2 block">
-          Owner passphrase
+          {t("lock.field")}
         </label>
         <input
           id="passphrase"
@@ -479,7 +520,7 @@ function Lock({ onOpen }: { onOpen: () => void }) {
           disabled={busy}
           className="mt-5 w-full rounded-lg bg-ember py-2.5 font-semibold text-[#17130e] transition hover:brightness-110 disabled:opacity-60"
         >
-          {busy ? "Opening…" : "Unlock"}
+          {busy ? t("lock.opening") : t("lock.submit")}
         </button>
       </form>
     </div>
@@ -570,7 +611,7 @@ function Compose({
       <form
         role="dialog"
         aria-modal="true"
-        aria-label="Write a memory"
+        aria-label={t("compose.title")}
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
@@ -587,17 +628,17 @@ function Compose({
             });
             onSaved();
           } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not save.");
+            setError(err instanceof Error ? err.message : t("compose.saveFailed"));
           } finally {
             setBusy(false);
           }
         }}
         className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-line bg-panel p-6"
       >
-        <h2 className="mb-5 text-lg font-semibold tracking-tight">Write a memory</h2>
+        <h2 className="mb-5 text-lg font-semibold tracking-tight">{t("compose.title")}</h2>
 
         <label htmlFor="content" className="eyebrow mb-2 block">
-          Content
+          {t("compose.content")}
         </label>
         <textarea
           id="content"
@@ -606,20 +647,21 @@ function Compose({
           rows={7}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="What is worth recalling later?"
+          placeholder={t("compose.contentHint")}
           className="prose-memory w-full resize-y rounded-lg border border-line bg-ground px-3 py-2.5 placeholder:text-faint"
         />
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="title" className="eyebrow mb-2 block">
-              Title <span className="normal-case tracking-normal">(optional)</span>
+              {t("compose.titleField")}{" "}
+              <span className="normal-case tracking-normal">{t("compose.optional")}</span>
             </label>
             <input
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Inferred from the first line"
+              placeholder={t("compose.titleHint")}
               className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
             />
           </div>
@@ -649,7 +691,8 @@ function Compose({
 
           <div>
             <label htmlFor="tags" className="eyebrow mb-2 block">
-              Tags <span className="normal-case tracking-normal">(comma separated)</span>
+              {t("compose.tags")}{" "}
+              <span className="normal-case tracking-normal">{t("compose.tagsHint")}</span>
             </label>
             <input
               id="tags"
@@ -688,7 +731,7 @@ function Compose({
 
           <div>
             <label htmlFor="importance" className="eyebrow mb-2 block">
-              Importance — {importance}
+              {t("compose.importance")} — {importance}
             </label>
             <input
               id="importance"
@@ -714,14 +757,14 @@ function Compose({
             onClick={onClose}
             className="rounded-lg border border-line px-3 py-2 text-sm text-dim transition hover:text-ink"
           >
-            Cancel
+            {t("compose.cancel")}
           </button>
           <button
             type="submit"
             disabled={busy || !content.trim()}
             className="rounded-lg bg-ember px-4 py-2 text-sm font-semibold text-[#17130e] transition hover:brightness-110 disabled:opacity-50"
           >
-            {busy ? "Saving…" : "Remember"}
+            {busy ? t("compose.saving") : t("compose.save")}
           </button>
         </div>
       </form>
