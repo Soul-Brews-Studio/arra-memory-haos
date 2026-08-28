@@ -129,6 +129,7 @@ const STRINGS = {
   "compose.optional": { th: "(ไม่ใส่ก็ได้)", en: "(optional)" },
   "compose.titleHint": { th: "เว้นไว้จะดึงจากบรรทัดแรก", en: "Inferred from the first line" },
   "compose.kind": { th: "ชนิด", en: "Kind" },
+  "compose.kindOther": { th: "\u0e2b\u0e23\u0e37\u0e2d\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e40\u0e2d\u0e07", en: "or type your own" },
   "compose.tags": { th: "แท็ก", en: "Tags" },
   "compose.tagsHint": { th: "(คั่นด้วยจุลภาค)", en: "(comma separated)" },
   "compose.importance": { th: "ความสำคัญ", en: "Importance" },
@@ -146,6 +147,10 @@ const STRINGS = {
   "lock.field": { th: "Owner passphrase", en: "Owner passphrase" },
   "lock.submit": { th: "ปลดล็อก", en: "Unlock" },
   "lock.opening": { th: "กำลังเปิด…", en: "Opening…" },
+  "lock.failed": {
+    th: "\u0e40\u0e02\u0e49\u0e32\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49 \u2014 \u0e44\u0e21\u0e48\u0e43\u0e0a\u0e48\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07 passphrase",
+    en: "Could not sign in — not a passphrase problem",
+  },
   "lock.wrong": { th: "passphrase ไม่ตรง", en: "That passphrase does not match." },
   "lock.splash": { th: "กำลังเปิด…", en: "opening…" },
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "./api";
 import { MemoryCard, useSlashFocus } from "./components";
-import { Chips } from "./Chips";
+import { Chips, kindColor } from "./Chips";
 import { Atlas } from "./Atlas";
 import { SearchLog } from "./SearchLog";
 import { Tools } from "./Tools";
@@ -500,8 +500,19 @@ function Lock({ onOpen }: { onOpen: () => void }) {
           try {
             await api.session.open(passphrase);
             onOpen();
-          } catch {
-            setError(t("lock.wrong"));
+          } catch (err) {
+            // Only a 401 means the passphrase is wrong. Everything else — the
+            // server unreachable, a cookie the browser refused, a 500 — used to
+            // be reported as "wrong passphrase" too, which is a specific and
+            // confident lie: it sends someone to check the one thing that was
+            // never the problem. Verified today with a passphrase the API
+            // accepted with a 200 while this screen insisted it did not match.
+            const status = err instanceof ApiError ? err.status : 0;
+            setError(
+              status === 401
+                ? t("lock.wrong")
+                : `${t("lock.failed")} (${status || "network"})`,
+            );
           } finally {
             setBusy(false);
           }
@@ -689,23 +700,35 @@ function Compose({
             <label htmlFor="kind" className="eyebrow mb-2 block">
               {t("compose.kind")}
             </label>
-            {/* An input with a datalist, not a select. Kind is free text, so the
-                four suggestions are offered and none is enforced — write
-                "resonance" today without anyone changing an enum first. A select
-                would make the vocabulary closed again by the back door. */}
-            <input
-              id="kind"
-              list="kind-suggestions"
-              value={kind}
-              onChange={(e) => setKind(e.target.value)}
-              placeholder={SUGGESTED_KINDS.join(" · ")}
-              className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
-            />
-            <datalist id="kind-suggestions">
+            {/* Chips plus free text — the same idiom as the filter bar.
+                This was a datalist, which is a <select> in disguise: it renders
+                a native dropdown that covers whatever field comes next, and it
+                hides its options until you interact. Both are the things the
+                chip bar exists to avoid. The four suggestions are visible and
+                one click each; the input beside them accepts anything, so
+                writing "resonance" today still needs nobody's permission. */}
+            <div className="flex flex-wrap items-center gap-1.5">
               {SUGGESTED_KINDS.map((k) => (
-                <option key={k} value={k} />
+                <button
+                  key={k}
+                  type="button"
+                  className="chip"
+                  aria-pressed={kind === k}
+                  onClick={() => setKind(k)}
+                  style={kind === k ? undefined : { color: kindColor(k) }}
+                >
+                  {k}
+                </button>
               ))}
-            </datalist>
+              <input
+                id="kind"
+                value={kind}
+                onChange={(e) => setKind(e.target.value)}
+                aria-label={t("compose.kind")}
+                className="min-w-[6rem] flex-1 rounded-lg border border-line bg-ground px-2.5 py-1 text-sm text-ink placeholder:text-faint"
+                placeholder={t("compose.kindOther")}
+              />
+            </div>
           </div>
 
           <div>
