@@ -1,5 +1,5 @@
 name: "Arra Memory"
-version: "0.19.2"
+version: "0.20.0"
 slug: "arra_memory"
 description: >-
   A durable memory corpus that lives in your Home Assistant sidebar and answers

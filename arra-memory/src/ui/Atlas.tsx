@@ -73,9 +73,27 @@ export function Atlas({
    * of each other are unreadable. Twenty is about where a panel this size stops
    * being a picture and starts being a list.
    */
-  const [showNames, setShowNames] = useState(false);
-  const namesOn = useRef(false);
+  /**
+   * On by default in MAP, off in WEB.
+   *
+   * The map draws no edges — it is points only — so without names it is a
+   * constellation: you can see there is structure and not what any of it is.
+   * The web has filaments doing that job, and twenty labels over them is
+   * clutter. So the default follows the mode.
+   *
+   * Until you touch it. Once the toggle has been used it is your decision and
+   * the mode stops overriding it, because a control that silently resets itself
+   * when you change something else is not a control.
+   */
+  const [showNames, setShowNames] = useState(true);
+  const namesTouched = useRef(false);
+  const namesOn = useRef(true);
   namesOn.current = showNames;
+
+  useEffect(() => {
+    if (namesTouched.current) return;
+    setShowNames(mode === "map");
+  }, [mode]);
   const labelRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   // The clicked memory's full text. The graph carries titles only — sending
@@ -738,7 +756,10 @@ export function Atlas({
             type="button"
             className="chip"
             aria-pressed={showNames}
-            onClick={() => setShowNames((v) => !v)}
+            onClick={() => {
+              namesTouched.current = true;
+              setShowNames((v) => !v);
+            }}
             title={t("atlas.namesTitle")}
           >
             {t("atlas.names")}
