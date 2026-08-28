@@ -207,10 +207,21 @@ export async function createMemory(input: CreateMemoryInput): Promise<Memory> {
     ],
   });
 
-  return {
+  const memory: Memory = {
     id, title, content, kind, tags, source, importance,
     workspace, project, url, createdBy, createdAt: now, updatedAt: now,
   };
+
+  // Indexed HERE, not at the call sites. Every surface that writes a memory —
+  // REST, MCP `remember`, anything added later — gets a vector without having
+  // to remember to ask for one. It was a call-site concern until 2026-08-28,
+  // and MCP was the call site that never asked: memories written by claude.ai
+  // and Claude Code went in unembedded, the map stayed empty, and nothing
+  // reported a fault. Fire-and-forget on purpose (see indexMemory): the row is
+  // already durable, and a dead embedding server must never fail a write.
+  void indexMemory(memory);
+
+  return memory;
 }
 
 /** Trigram's floor: a query shorter than this cannot use the FTS index. */
@@ -411,11 +422,27 @@ export async function updateMemory(
   });
 
   // createdAt is deliberately not touched: a revision is the same memory.
-  return {
+  const memory: Memory = {
     ...existing,
     title, content, kind, tags, source, importance,
     workspace, project, url, createdBy, updatedAt,
   };
+
+  // Re-embed only when the embedded TEXT changed. indexMemory embeds
+  // `title\n\ncontent`, so a tag, importance or project edit cannot move the
+  // vector and must not pay for an embed call.
+  //
+  // This is the failure that could not heal itself: `VECTORS.pending` finds
+  // rows where the embedding is NULL or came from another model, so a revised
+  // memory — non-null vector, matching model — is invisible to backfill
+  // forever. Its vector goes on describing text that no longer exists, and
+  // semantic search keeps matching the old words. An empty map announces
+  // itself; this one does not.
+  if (title !== existing.title || content !== existing.content) {
+    void indexMemory(memory);
+  }
+
+  return memory;
 }
 
 export async function deleteMemory(id: string): Promise<boolean> {

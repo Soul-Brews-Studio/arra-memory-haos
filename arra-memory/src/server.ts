@@ -11,7 +11,6 @@ import {
   embeddingCoverage,
   getMemory,
   getMemoryStats,
-  indexMemory,
   listAgents,
   listFacets,
   listProjects,
@@ -619,11 +618,10 @@ const app = new Elysia()
     if (!auth.ok) return unauthorized(originOf(request));
     try {
       const body = (await request.json()) as any;
+      // createMemory indexes its own writes since 0.22.0 — this handler used to
+      // be the ONLY caller that did, which is exactly why MCP writes went
+      // unembedded. Best-effort and never awaited; see memory.ts.
       const memory = await createMemory({ ...body, source: body.source ?? "web" });
-      // Best-effort and deliberately not awaited into the response: the memory
-      // is already durable, and a slow or dead embedding server must not make
-      // the write appear to fail.
-      void indexMemory(memory);
       return json({ memory }, 201);
     } catch (error) {
       return json(
