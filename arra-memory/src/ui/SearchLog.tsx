@@ -169,6 +169,24 @@ export function SearchLog({ onClose, nav }: { onClose: () => void; nav?: React.R
                           <span>{e.kind}</span>
                         </>
                       )}
+                      {/* The scope a search ran under. Without it, two entries
+                          with the same query and different result counts look
+                          like the corpus changed between them — when in fact one
+                          was scoped to a workspace and the other was not. */}
+                      {e.workspace && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span title="Scoped to workspace" style={{ color: "var(--color-ember)" }}>
+                            in {e.workspace}
+                          </span>
+                        </>
+                      )}
+                      {e.project && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span title="Scoped to project">{e.project}</span>
+                        </>
+                      )}
                     </div>
                   </div>
 

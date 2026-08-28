@@ -19,8 +19,41 @@ export interface Memory {
   tags: string[];
   source: string;
   importance: number;
+  /** The team-level namespace. Empty means unfiled, not a workspace named "none". */
+  workspace: string;
+  project: string;
+  url: string;
+  /** Which agent or person wrote it. Empty on anything written anonymously. */
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * How the corpus is divided, as the server derives it.
+ *
+ * There is no workspaces table on the server either — these come from a GROUP
+ * BY over the memories themselves, so the list is always exactly what has been
+ * written and never a registry that drifted.
+ */
+export interface WorkspaceFacet {
+  workspace: string;
+  count: number;
+  projects: number;
+  agents: number;
+  latest: string;
+}
+
+export interface ProjectFacet {
+  project: string;
+  count: number;
+  latest: string;
+}
+
+export interface AgentFacet {
+  agent: string;
+  count: number;
+  latest: string;
 }
 
 export interface MemoryStats {
@@ -47,6 +80,7 @@ export interface SearchLogEntry {
   query: string;
   mode: string;
   kind: string;
+  workspace: string;
   project: string;
   tag: string;
   resultCount: number;

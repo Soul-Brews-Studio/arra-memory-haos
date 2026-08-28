@@ -3,8 +3,33 @@ import { ApiError, api } from "./api";
 import { KindFilter, MemoryCard, useSlashFocus } from "./components";
 import { SearchLog } from "./SearchLog";
 import { Tools } from "./Tools";
+import { Workspaces } from "./Workspaces";
+import { ScopeBar } from "./ScopeBar";
 import { NavBar } from "./Menu";
-import { MEMORY_KINDS, type Health, type Memory, type MemoryKind, type MemoryStats } from "./types";
+import {
+  MEMORY_KINDS,
+  type AgentFacet,
+  type Health,
+  type Memory,
+  type MemoryKind,
+  type MemoryStats,
+  type WorkspaceFacet,
+} from "./types";
+
+/**
+ * The archive's scope: which workspace, project, and agent are being shown.
+ *
+ * Empty in every slot means the whole corpus, which is the default and stays
+ * the default — workspace and agent are filters here exactly as they are over
+ * MCP, so nothing is ever hidden by not having chosen one.
+ */
+export interface Scope {
+  workspace: string;
+  project: string;
+  createdBy: string;
+}
+
+const NO_SCOPE: Scope = { workspace: "", project: "", createdBy: "" };
 
 type Phase = "checking" | "locked" | "ready";
 
@@ -14,12 +39,18 @@ export default function App() {
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<MemoryKind | "">("");
+  const [scope, setScope] = useState<Scope>(NO_SCOPE);
+  // The vocabulary the filter bar offers, fetched once and refreshed on write.
+  const [facets, setFacets] = useState<{ workspaces: WorkspaceFacet[]; agents: AgentFacet[] }>({
+    workspaces: [],
+    agents: [],
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   // One view at a time. These were modals over the archive; a search log with
   // hundreds of rows is a page, not something to read through a window.
-  const [view, setView] = useState<"archive" | "log" | "tools">("archive");
+  const [view, setView] = useState<"archive" | "log" | "tools" | "workspaces">("archive");
   const [health, setHealth] = useState<Health | null>(null);
 
   const searchRef = useSlashFocus();
@@ -40,12 +71,17 @@ export default function App() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [found, corpus] = await Promise.all([
-        api.memories.search({ q: query, kind, limit: 100 }),
+      const [found, corpus, divisions] = await Promise.all([
+        api.memories.search({ q: query, kind, ...scope, limit: 100 }),
         api.stats(),
+        // Loaded with the list so the filter bar always offers exactly the
+        // workspaces and agents that currently exist — a dropdown listing a
+        // workspace whose last memory was just deleted would filter to nothing.
+        api.workspaces.list(),
       ]);
       setMemories(found.memories);
       setStats(corpus.stats);
+      setFacets({ workspaces: divisions.workspaces, agents: divisions.agents });
       setError(null);
     } catch (err) {
       // A 401 mid-session means the cookie lapsed or was revoked elsewhere.
@@ -58,7 +94,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [query, kind]);
+  }, [query, kind, scope]);
 
   // Debounced: the corpus is searched on every keystroke, and a local libSQL
   // file is fast enough that 180ms is about perception, not about load.
@@ -76,6 +112,12 @@ export default function App() {
       primary={view === "archive" ? { label: "Remember", onSelect: () => setComposing(true) } : undefined}
       items={[
         { label: "Archive", active: view === "archive", onSelect: () => setView("archive") },
+        {
+          label: "Workspaces",
+          title: "How the corpus is divided, and who writes to each part",
+          active: view === "workspaces",
+          onSelect: () => setView("workspaces"),
+        },
         {
           label: "Tools",
           title: "Which MCP tools this connector offers, and what to switch off",
@@ -103,6 +145,26 @@ export default function App() {
       ]}
     />
   );
+
+  if (view === "workspaces") {
+    return (
+      <div className="min-h-screen">
+        <Workspaces
+          onClose={() => setView("archive")}
+          nav={nav}
+          // Picking a workspace, project, or agent here IS the navigation: it
+          // scopes the archive and takes you there, rather than showing a second
+          // list of memories that would then have to stay in step with the real one.
+          onFilter={(next) => {
+            setScope({ ...NO_SCOPE, ...next });
+            setQuery("");
+            setView("archive");
+          }}
+        />
+        <Footer health={health} />
+      </div>
+    );
+  }
 
   if (view === "tools") {
     return (
@@ -161,6 +223,14 @@ export default function App() {
             </kbd>
           </div>
 
+          <ScopeBar
+            scope={scope}
+            workspaces={facets.workspaces}
+            agents={facets.agents}
+            onChange={setScope}
+            onClear={() => setScope(NO_SCOPE)}
+          />
+
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <KindFilter value={kind} counts={stats?.kinds ?? {}} onChange={setKind} />
             <p className="meta">
@@ -185,7 +255,13 @@ export default function App() {
         )}
 
         {memories.length === 0 && !loading ? (
-          <Empty query={query} kind={kind} onCompose={() => setComposing(true)} />
+          <Empty
+            query={query}
+            kind={kind}
+            scope={scope}
+            onClearScope={() => setScope(NO_SCOPE)}
+            onCompose={() => setComposing(true)}
+          />
         ) : (
           <div className="flex flex-col gap-3">
             {memories.map((memory) => (
@@ -214,6 +290,10 @@ export default function App() {
 
       {composing && (
         <Compose
+          // Pre-filled from what you are currently looking at. Writing a memory
+          // while scoped to a workspace and having it land outside that workspace
+          // is the mistake this prevents; both fields stay editable.
+          scope={scope}
           onClose={() => setComposing(false)}
           onSaved={() => {
             setComposing(false);
@@ -320,13 +400,18 @@ function Lock({ onOpen }: { onOpen: () => void }) {
 function Empty({
   query,
   kind,
+  scope,
+  onClearScope,
   onCompose,
 }: {
   query: string;
   kind: MemoryKind | "";
+  scope: Scope;
+  onClearScope: () => void;
   onCompose: () => void;
 }) {
-  const filtered = Boolean(query || kind);
+  const scoped = Boolean(scope.workspace || scope.project || scope.createdBy);
+  const filtered = Boolean(query || kind) || scoped;
   return (
     <div className="rounded-xl border border-dashed border-line py-16 text-center">
       <p className="mb-1.5 text-ink">
@@ -337,6 +422,18 @@ function Empty({
           ? "Recall is literal keyword matching across titles, content and tags — try a word you know is in there."
           : "Memories written here or by Claude over MCP will appear in this list."}
       </p>
+      {/* An empty scoped view is ambiguous — "the corpus has nothing" and "this
+          workspace has nothing" look identical — so say which one, and offer the
+          way out. Without this a filter left on reads as an empty archive. */}
+      {scoped && (
+        <button
+          type="button"
+          onClick={onClearScope}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm text-dim transition hover:border-ember hover:text-ember"
+        >
+          Search the whole corpus instead
+        </button>
+      )}
       {!filtered && (
         <button
           type="button"
@@ -350,11 +447,21 @@ function Empty({
   );
 }
 
-function Compose({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function Compose({
+  scope,
+  onClose,
+  onSaved,
+}: {
+  scope: Scope;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<MemoryKind>("note");
   const [tags, setTags] = useState("");
+  const [workspace, setWorkspace] = useState(scope.workspace);
+  const [project, setProject] = useState(scope.project);
   const [importance, setImportance] = useState(3);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -391,6 +498,8 @@ function Compose({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
               kind,
               tags: parsedTags,
               importance,
+              workspace: workspace.trim() || undefined,
+              project: project.trim() || undefined,
             });
             onSaved();
           } catch (err) {
@@ -458,6 +567,32 @@ function Compose({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="turso, haos"
+              className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="workspace" className="eyebrow mb-2 block">
+              Workspace <span className="normal-case tracking-normal">(optional)</span>
+            </label>
+            <input
+              id="workspace"
+              value={workspace}
+              onChange={(e) => setWorkspace(e.target.value)}
+              placeholder="arra-memory-haos"
+              className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="project" className="eyebrow mb-2 block">
+              Project <span className="normal-case tracking-normal">(optional)</span>
+            </label>
+            <input
+              id="project"
+              value={project}
+              onChange={(e) => setProject(e.target.value)}
+              placeholder="oauth"
               className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
             />
           </div>

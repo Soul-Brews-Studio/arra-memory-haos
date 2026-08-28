@@ -4,14 +4,17 @@ import {
   deleteMemory,
   getMemory,
   getMemoryStats,
+  listAgents,
   listMonths,
   listProjects,
   listTags,
+  listWorkspaces,
   searchInRange,
   searchMemories,
   updateMemory,
   type Memory,
 } from "./memory";
+import { VERSION } from "./version";
 import {
   clearSearchLog,
   deleteSearchLogEntry,
@@ -130,6 +133,7 @@ function render(memory: Memory): string {
   const provenance = [
     `id: ${memory.id}`,
     `importance: ${memory.importance}/5`,
+    memory.workspace && `workspace: ${memory.workspace}`,
     memory.project && `project: ${memory.project}`,
     memory.url && `url: ${memory.url}`,
     `source: ${memory.source}`,
@@ -146,13 +150,53 @@ function render(memory: Memory): string {
 
 const KIND_ENUM = { type: "string", enum: [...MEMORY_KINDS] };
 
+const WORKSPACE_PROP = {
+  type: "string",
+  description:
+    "Workspace this belongs to — the team-level namespace one tier above project. One workspace holds many projects, e.g. workspace \"arra-memory-haos\" with projects \"oauth\" and \"fts\". Free-form: a workspace exists as soon as a memory names it.",
+};
+
 const PROVENANCE_PROPS = {
+  workspace: WORKSPACE_PROP,
   project: {
     type: "string",
     description: "Project this belongs to, e.g. github.com/owner/repo.",
   },
   url: { type: "string", description: "Reference URL. Must be http or https." },
   createdBy: { type: "string", description: "Who or what produced this memory." },
+};
+
+/**
+ * The scope filters every search tool accepts.
+ *
+ * All optional, and omitting one means "do not narrow on it" — so a client that
+ * has never heard of workspaces still searches the entire corpus and a client
+ * that has can scope down without a different tool. This is what makes workspace
+ * and agent filters rather than boundaries.
+ */
+const SCOPE_PROPS = {
+  workspace: {
+    type: "string",
+    description:
+      "Only memories in this workspace. Omit to search every workspace. Call list_workspaces to see what exists.",
+  },
+  project: {
+    type: "string",
+    description: "Only memories filed under this project.",
+  },
+  createdBy: {
+    type: "string",
+    description:
+      "Only memories written by this agent or person. Call list_agents to see who has written to the corpus.",
+  },
+};
+
+/** The one property the workspace-aware list tools share. */
+const WORKSPACE_FILTER_PROP = {
+  workspace: {
+    type: "string",
+    description: "Only count what is inside this workspace. Omit for the whole corpus.",
+  },
 };
 
 const BASE_TOOLS = [
@@ -176,13 +220,13 @@ const BASE_TOOLS = [
   {
     name: "recall_memories",
     description:
-      "Recall memories by keyword across titles, content, and tags, optionally narrowed by kind, project, or tag. An empty query returns the most recent important memories.",
+      "Recall memories by keyword across titles, content, and tags, optionally narrowed by kind, workspace, project, agent, or tag. An empty query returns the most recent important memories.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", maxLength: 240 },
         kind: KIND_ENUM,
-        project: { type: "string" },
+        ...SCOPE_PROPS,
         tag: { type: "string" },
         limit: { type: "integer", minimum: 1, maximum: 50 },
       },
@@ -227,20 +271,48 @@ const BASE_TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
-    name: "list_projects",
+    name: "list_workspaces",
     description:
-      "List every project in the corpus with its memory count. Each of these also appears as its own recall tool.",
+      "List every workspace in the corpus with how many memories, projects, and agents it holds. A workspace is the tier above project — start here to find out how the archive is divided before searching it.",
     inputSchema: {
       type: "object",
       properties: { limit: { type: "integer", minimum: 1, maximum: 100 } },
     },
   },
   {
-    name: "list_tags",
-    description: "List every tag in the corpus with how often it is used.",
+    name: "list_agents",
+    description:
+      "List who has written to the corpus — every distinct createdBy value with its memory count. Use the names it returns as the createdBy filter on any search tool.",
     inputSchema: {
       type: "object",
-      properties: { limit: { type: "integer", minimum: 1, maximum: 100 } },
+      properties: {
+        ...WORKSPACE_FILTER_PROP,
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+      },
+    },
+  },
+  {
+    name: "list_projects",
+    description:
+      "List every project in the corpus with its memory count, optionally only those inside one workspace. Each of these also appears as its own recall tool.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...WORKSPACE_FILTER_PROP,
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+      },
+    },
+  },
+  {
+    name: "list_tags",
+    description:
+      "List every tag in the corpus with how often it is used, optionally only the tags actually used inside one workspace.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...WORKSPACE_FILTER_PROP,
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+      },
     },
   },
   {
@@ -315,6 +387,8 @@ const BASE_TOOLS = [
         from: { type: "string", description: "Start date, inclusive. ISO-8601." },
         to: { type: "string", description: "End date, inclusive. ISO-8601." },
         query: { type: "string", maxLength: 240 },
+        kind: KIND_ENUM,
+        ...SCOPE_PROPS,
         limit: { type: "integer", minimum: 1, maximum: 50 },
       },
       required: ["from", "to"],
@@ -356,6 +430,12 @@ async function buildToolList() {
         properties: {
           query: { type: "string", maxLength: 240 },
           kind: KIND_ENUM,
+          // A project name is not globally unique — two workspaces may both
+          // have an "oauth" project — so the tool still accepts a workspace to
+          // disambiguate. `createdBy` is here for the same reason it is on every
+          // other search tool: "what did the other agent decide about this".
+          workspace: SCOPE_PROPS.workspace,
+          createdBy: SCOPE_PROPS.createdBy,
           limit: { type: "integer", minimum: 1, maximum: 50 },
         },
       },
@@ -369,6 +449,11 @@ async function buildToolList() {
     type: "object",
     properties: {
       query: { type: "string", maxLength: 240 },
+      kind: KIND_ENUM,
+      // "What did this workspace do last week" and "what did that agent write
+      // yesterday" are the two questions a shared corpus makes urgent, and both
+      // are a time window plus one filter.
+      ...SCOPE_PROPS,
       limit: { type: "integer", minimum: 1, maximum: 50 },
     },
   };
@@ -457,14 +542,16 @@ async function callTool(name: string, args: Record<string, any>) {
         fromIso: range.fromIso,
         toIso: range.toIso,
         query: args.query,
+        ...scopeFrom(args),
         limit: args.limit ?? 20,
         label: range.label,
         source: "mcp",
       });
 
+      const narrowed = describeScope(args);
       const body = memories.length
         ? memories.map((m, i) => `${i + 1}. ${render(m)}`).join("\n\n")
-        : `No memories from ${range.label}${args.query ? ` matching “${args.query}”` : ""}.`;
+        : `No memories from ${range.label}${args.query ? ` matching “${args.query}”` : ""}${narrowed ? ` in ${narrowed}` : ""}.`;
       return {
         ...text(body),
         structuredContent: {
@@ -472,6 +559,7 @@ async function callTool(name: string, args: Record<string, any>) {
           from: range.fromIso,
           to: range.toIso,
           matchMode: "keyword",
+          ...scopeFrom(args),
           count: memories.length,
           memories,
         },
@@ -523,22 +611,52 @@ async function callTool(name: string, args: Record<string, any>) {
       return { ...text(JSON.stringify(stats, null, 2)), structuredContent: { stats } };
     }
 
+    case "list_workspaces": {
+      const { workspaces, unassigned } = await listWorkspaces(args.limit ?? 50);
+      const lines = workspaces.map(
+        (w) =>
+          `${w.workspace} — ${w.count} memories, ${w.projects} project(s), ${w.agents} agent(s), last ${w.latest}`,
+      );
+      // The unassigned count is stated even when it is the only thing to say.
+      // A workspace list that quietly omits part of the corpus would have a
+      // model conclude the archive is empty when it is merely unfiled.
+      if (unassigned) {
+        lines.push(`(no workspace) — ${unassigned} memories not filed under any workspace`);
+      }
+      const body = lines.length ? lines.join("\n") : "No memories yet.";
+      return { ...text(body), structuredContent: { workspaces, unassigned } };
+    }
+
+    case "list_agents": {
+      const agents = await listAgents(args.limit ?? 50, args.workspace);
+      const where = args.workspace ? ` in workspace “${args.workspace}”` : "";
+      const body = agents.length
+        ? agents.map((a) => `${a.agent} — ${a.count} memories, last ${a.latest}`).join("\n")
+        : `No memories record who wrote them${where}.`;
+      return { ...text(body), structuredContent: { agents, workspace: args.workspace ?? "" } };
+    }
+
     case "list_projects": {
-      const projects = await listProjects(args.limit ?? 20);
+      const projects = await listProjects(args.limit ?? 20, args.workspace);
+      const where = args.workspace ? ` in workspace “${args.workspace}”` : "";
       const body = projects.length
         ? projects
             .map((p) => `${p.project} — ${p.count} memories, last ${p.latest}`)
             .join("\n")
-        : "No memories carry a project yet.";
-      return { ...text(body), structuredContent: { projects } };
+        : `No memories carry a project${where} yet.`;
+      return {
+        ...text(body),
+        structuredContent: { projects, workspace: args.workspace ?? "" },
+      };
     }
 
     case "list_tags": {
-      const tags = await listTags(args.limit ?? 50);
+      const tags = await listTags(args.limit ?? 50, args.workspace);
+      const where = args.workspace ? ` in workspace “${args.workspace}”` : "";
       const body = tags.length
         ? tags.map((t) => `${t.tag} (${t.count})`).join(", ")
-        : "No tags yet.";
-      return { ...text(body), structuredContent: { tags } };
+        : `No tags${where} yet.`;
+      return { ...text(body), structuredContent: { tags, workspace: args.workspace ?? "" } };
     }
 
     case "list_search_log": {
@@ -654,19 +772,22 @@ async function callTool(name: string, args: Record<string, any>) {
         fromIso: from.toISOString(),
         toIso: to.toISOString(),
         query: args.query,
+        ...scopeFrom(args),
         limit: args.limit ?? 20,
         label: `${args.from} to ${args.to}`,
         source: "mcp",
       });
+      const narrowed = describeScope(args);
       const body = memories.length
         ? memories.map((m, i) => `${i + 1}. ${render(m)}`).join("\n\n")
-        : `No memories between ${args.from} and ${args.to}.`;
+        : `No memories between ${args.from} and ${args.to}${narrowed ? ` in ${narrowed}` : ""}.`;
       return {
         ...text(body),
         structuredContent: {
           from: from.toISOString(),
           to: to.toISOString(),
           matchMode: "keyword",
+          ...scopeFrom(args),
           count: memories.length,
           memories,
         },
@@ -678,24 +799,46 @@ async function callTool(name: string, args: Record<string, any>) {
   }
 }
 
-async function recall(args: Record<string, any>) {
-  const memories = await searchMemories({
-    query: args.query,
+/**
+ * The scope a model asked for, as the shape memory.ts expects.
+ *
+ * Always returns all four keys, empty when unasked, so `structuredContent` says
+ * plainly what a result WAS narrowed by. Reporting only the filters that were
+ * set would leave a model unable to tell "the whole corpus has nothing" from
+ * "this workspace has nothing" — the exact confusion workspaces introduce.
+ */
+function scopeFrom(args: Record<string, any>) {
+  return {
     kind: args.kind as MemoryKind | undefined,
-    project: args.project,
-    tag: args.tag,
-    limit: args.limit ?? 10,
-    source: "mcp",
-  });
+    workspace: args.workspace ?? "",
+    project: args.project ?? "",
+    createdBy: args.createdBy ?? "",
+  };
+}
 
-
-  const scope = [
+/** The same scope in prose, for the empty-result sentence. */
+function describeScope(args: Record<string, any>): string {
+  return [
+    args.workspace && `workspace “${args.workspace}”`,
     args.project && `project “${args.project}”`,
+    args.createdBy && `memories by ${args.createdBy}`,
     args.kind && `kind ${args.kind}`,
     args.tag && `tag ${args.tag}`,
   ]
     .filter(Boolean)
     .join(", ");
+}
+
+async function recall(args: Record<string, any>) {
+  const memories = await searchMemories({
+    query: args.query,
+    ...scopeFrom(args),
+    tag: args.tag,
+    limit: args.limit ?? 10,
+    source: "mcp",
+  });
+
+  const scope = describeScope(args);
 
   const body = memories.length
     ? memories.map((m, i) => `${i + 1}. ${render(m)}`).join("\n\n")
@@ -708,7 +851,7 @@ async function recall(args: Record<string, any>) {
     structuredContent: {
       query: args.query ?? "",
       matchMode: "keyword",
-      project: args.project ?? "",
+      ...scopeFrom(args),
       count: memories.length,
       memories,
     },
@@ -727,7 +870,10 @@ export async function handleMcp(request: JsonRpcRequest): Promise<unknown | null
         // listChanged tells the client the tool list is live — which it is, as
         // writing a memory under a new project adds a tool.
         capabilities: { tools: { listChanged: true } },
-        serverInfo: { name: "Arra Memory", version: "0.1.0" },
+        // The real build number, not a hand-maintained constant. A client that
+        // reports what it connected to should not report a version that stopped
+        // being true eight releases ago.
+        serverInfo: { name: "Arra Memory", version: VERSION },
       });
 
     // Notifications carry no id and MUST NOT be answered — returning a response

@@ -12,6 +12,7 @@ import {
   normalizeTags,
   normalizeText,
   normalizeUrl,
+  normalizeWorkspace,
   nowIso,
   parseTags,
   type MemoryKind,
@@ -30,6 +31,7 @@ export interface Memory {
   tags: string[];
   source: string;
   importance: number;
+  workspace: string;
   project: string;
   url: string;
   createdBy: string;
@@ -44,6 +46,8 @@ export interface CreateMemoryInput {
   tags?: string[];
   source?: string;
   importance?: number;
+  /** The team-level namespace. One workspace holds many projects. */
+  workspace?: string;
   project?: string;
   url?: string;
   createdBy?: string;
@@ -51,16 +55,46 @@ export interface CreateMemoryInput {
 
 export type UpdateMemoryInput = Partial<CreateMemoryInput>;
 
-export interface SearchMemoryInput {
-  query?: string;
+/**
+ * The four scope filters every search accepts.
+ *
+ * Every one is optional and every one omitted means "do not narrow on this".
+ * That is the whole multi-agent contract: workspace and agent are FILTERS, not
+ * boundaries — an unscoped search still sees the entire corpus, so nothing an
+ * agent writes can be hidden from a human looking for it.
+ */
+export interface MemoryScope {
   kind?: MemoryKind;
+  /** Exact workspace match — the tier above project. */
+  workspace?: string;
   /** Exact project match — the facet the dynamic MCP tools filter on. */
   project?: string;
+  /** Exact agent match, against the `created_by` column. */
+  createdBy?: string;
+}
+
+export interface SearchMemoryInput extends MemoryScope {
+  query?: string;
   /** Substring match within the JSON tags array. */
   tag?: string;
   limit?: number;
   /** Where the search came from — "mcp", "web". Recorded in the log. */
   source?: string;
+}
+
+/**
+ * The eight bound arguments for `scopeFilter` in sql.ts, in its exact order.
+ *
+ * Written once, here, because the order is a contract between two files and
+ * eight positional placeholders are easy to transpose silently — a swapped pair
+ * would filter projects by workspace name and return nothing, with no error.
+ */
+function scopeArgs(scope: MemoryScope): string[] {
+  const kind = scope.kind ? normalizeKind(scope.kind) : "";
+  const workspace = normalizeWorkspace(scope.workspace);
+  const project = normalizeProject(scope.project);
+  const createdBy = normalizeCreatedBy(scope.createdBy);
+  return [kind, kind, workspace, workspace, project, project, createdBy, createdBy];
 }
 
 export interface MemoryStats {
@@ -78,6 +112,7 @@ interface MemoryRow {
   tags: string;
   source: string;
   importance: number;
+  workspace: string;
   project: string;
   url: string;
   created_by: string;
@@ -94,6 +129,7 @@ function toMemory(row: MemoryRow): Memory {
     tags: parseTags(row.tags),
     source: row.source,
     importance: Number(row.importance),
+    workspace: row.workspace ?? "",
     project: row.project ?? "",
     url: row.url ?? "",
     createdBy: row.created_by ?? "",
@@ -117,6 +153,7 @@ export async function createMemory(input: CreateMemoryInput): Promise<Memory> {
   const tags = normalizeTags(input.tags);
   const source = normalizeSource(input.source);
   const importance = normalizeImportance(input.importance);
+  const workspace = normalizeWorkspace(input.workspace);
   const project = normalizeProject(input.project);
   const url = normalizeUrl(input.url);
   const createdBy = normalizeCreatedBy(input.createdBy);
@@ -127,13 +164,13 @@ export async function createMemory(input: CreateMemoryInput): Promise<Memory> {
     sql: MEMORIES.insert,
     args: [
       id, title, content, kind, JSON.stringify(tags), source, importance,
-      project, url, createdBy, now, now,
+      workspace, project, url, createdBy, now, now,
     ],
   });
 
   return {
     id, title, content, kind, tags, source, importance,
-    project, url, createdBy, createdAt: now, updatedAt: now,
+    workspace, project, url, createdBy, createdAt: now, updatedAt: now,
   };
 }
 
@@ -165,7 +202,15 @@ function ftsPhrase(query: string): string {
  */
 async function logged<T extends { id: string }>(
   run: () => Promise<T[]>,
-  meta: { query?: string; mode: string; kind?: string; project?: string; tag?: string; source?: string },
+  meta: {
+    query?: string;
+    mode: string;
+    kind?: string;
+    workspace?: string;
+    project?: string;
+    tag?: string;
+    source?: string;
+  },
 ): Promise<T[]> {
   const started = Date.now();
   const results = await run();
@@ -195,6 +240,7 @@ export async function searchMemories(
     query: input.query,
     mode: "keyword",
     kind: input.kind,
+    workspace: input.workspace,
     project: input.project,
     tag: input.tag,
     source: input.source,
@@ -219,12 +265,10 @@ export async function searchMemoriesNoLog(
   // filter is involved — tag matching is a JSON-substring test the FTS table
   // cannot express, so those queries stay on the LIKE path below.
   if (query.length >= TRIGRAM_MIN && !input.tag) {
-    const kind = input.kind ? normalizeKind(input.kind) : "";
-    const project = normalizeProject(input.project);
     try {
       const result = await db().execute({
         sql: MEMORIES.searchFts,
-        args: [ftsPhrase(query), kind, kind, project, project, clampLimit(input.limit)],
+        args: [ftsPhrase(query), ...scopeArgs(input), clampLimit(input.limit)],
       });
       return rows<MemoryRow>(result).map(toMemory);
     } catch {
@@ -233,8 +277,6 @@ export async function searchMemoriesNoLog(
     }
   }
   const pattern = `%${query.toLocaleLowerCase()}%`;
-  const kind = input.kind ? normalizeKind(input.kind) : "";
-  const project = normalizeProject(input.project);
   const tag = (input.tag ?? "").trim().toLocaleLowerCase();
   // Tags live as a JSON array in one column, so a tag filter is a substring
   // match against that text. Quoting the needle stops "ha" matching "haos".
@@ -247,8 +289,7 @@ export async function searchMemoriesNoLog(
     sql: MEMORIES.search,
     args: [
       query, pattern, pattern, pattern,
-      kind, kind,
-      project, project,
+      ...scopeArgs(input),
       tag, tagPattern,
       query, query,
       query, pattern,
@@ -293,6 +334,8 @@ export async function updateMemory(
     input.importance === undefined
       ? existing.importance
       : normalizeImportance(input.importance);
+  const workspace =
+    input.workspace === undefined ? existing.workspace : normalizeWorkspace(input.workspace);
   const project =
     input.project === undefined ? existing.project : normalizeProject(input.project);
   const url = input.url === undefined ? existing.url : normalizeUrl(input.url);
@@ -304,14 +347,15 @@ export async function updateMemory(
     sql: MEMORIES.update,
     args: [
       title, content, kind, JSON.stringify(tags), source, importance,
-      project, url, createdBy, updatedAt, existing.id,
+      workspace, project, url, createdBy, updatedAt, existing.id,
     ],
   });
 
   // createdAt is deliberately not touched: a revision is the same memory.
   return {
     ...existing,
-    title, content, kind, tags, source, importance, project, url, createdBy, updatedAt,
+    title, content, kind, tags, source, importance,
+    workspace, project, url, createdBy, updatedAt,
   };
 }
 
@@ -366,11 +410,17 @@ export interface ProjectFacet {
  * becomes its own recall tool, so a model sees `recall_haos_oracle` rather than
  * having to know that `project` is a parameter and guess its value.
  */
-export async function listProjects(limit = 20): Promise<ProjectFacet[]> {
+export async function listProjects(
+  limit = 20,
+  workspace?: string,
+): Promise<ProjectFacet[]> {
   await ensureSchema();
   const result = await db().execute({
     sql: MEMORIES.facets.projects,
-    args: [clampLimit(limit, 20)],
+    args: [
+      normalizeWorkspace(workspace), normalizeWorkspace(workspace),
+      clampLimit(limit, 20),
+    ],
   });
   return rows<{ project: string; count: number; latest: string }>(result).map((row) => ({
     project: String(row.project),
@@ -379,16 +429,107 @@ export async function listProjects(limit = 20): Promise<ProjectFacet[]> {
   }));
 }
 
-/** Every tag in the corpus with its use count, busiest first. */
-export async function listTags(limit = 50): Promise<Array<{ tag: string; count: number }>> {
+/**
+ * Every tag in the corpus with its use count, busiest first — optionally only
+ * the tags actually used inside one workspace.
+ *
+ * A tag vocabulary is only useful if it is the vocabulary of the thing you are
+ * looking at; the whole corpus's tag list is noise to an agent working in one
+ * workspace, which is what makes this the "combo with tags" half of the design.
+ */
+export async function listTags(
+  limit = 50,
+  workspace?: string,
+): Promise<Array<{ tag: string; count: number }>> {
   await ensureSchema();
   const result = await db().execute({
     sql: MEMORIES.facets.allTags,
-    args: [clampLimit(limit, 50)],
+    args: [
+      normalizeWorkspace(workspace), normalizeWorkspace(workspace),
+      clampLimit(limit, 50),
+    ],
   });
   return rows<{ tag: string; count: number }>(result).map((row) => ({
     tag: String(row.tag),
     count: Number(row.count),
+  }));
+}
+
+export interface WorkspaceFacet {
+  workspace: string;
+  count: number;
+  /** Distinct non-empty projects filed under it. */
+  projects: number;
+  /** Distinct non-empty `created_by` values that have written to it. */
+  agents: number;
+  latest: string;
+}
+
+/**
+ * The workspaces, busiest first, plus how many memories name none.
+ *
+ * There is no workspaces table — this query IS the list. A workspace comes into
+ * existence the moment an agent writes into it and disappears when its last
+ * memory leaves, which is why creating one needs no endpoint and no ceremony.
+ *
+ * `unassigned` is returned alongside because the list itself excludes the unset
+ * bucket, and a page that showed only these rows would quietly account for less
+ * than the whole corpus.
+ */
+export async function listWorkspaces(
+  limit = 50,
+): Promise<{ workspaces: WorkspaceFacet[]; unassigned: number }> {
+  await ensureSchema();
+  const conn = db();
+  const [listed, none] = await Promise.all([
+    conn.execute({ sql: MEMORIES.facets.workspaces, args: [clampLimit(limit, 50)] }),
+    conn.execute(MEMORIES.facets.unassigned),
+  ]);
+  return {
+    workspaces: rows<{
+      workspace: string; count: number; projects: number; agents: number; latest: string;
+    }>(listed).map((row) => ({
+      workspace: String(row.workspace),
+      count: Number(row.count),
+      projects: Number(row.projects),
+      agents: Number(row.agents),
+      latest: String(row.latest),
+    })),
+    unassigned: Number(firstRow<{ count: number }>(none)?.count ?? 0),
+  };
+}
+
+export interface AgentFacet {
+  agent: string;
+  count: number;
+  latest: string;
+}
+
+/**
+ * Who has written to the corpus, busiest first, optionally within one
+ * workspace.
+ *
+ * `created_by` has been a stored column since the first release and was
+ * filterable by nothing at all — so "two agents share this corpus and I cannot
+ * tell who wrote what" was true even though the answer was on every row. This
+ * is the facet that fixes it.
+ */
+export async function listAgents(
+  limit = 50,
+  workspace?: string,
+): Promise<AgentFacet[]> {
+  await ensureSchema();
+  const result = await db().execute({
+    sql: MEMORIES.facets.agents,
+    args: [
+      normalizeWorkspace(workspace), normalizeWorkspace(workspace),
+      clampLimit(limit, 50),
+    ],
+  });
+  return rows<{ agent: string; count: number; latest: string }>(result).map((row) => ({
+    agent: String(row.agent),
+    count: Number(row.count),
+    latest: String(row.latest),
   }));
 }
 
@@ -412,28 +553,35 @@ export async function listMonths(limit = 24): Promise<Array<{ month: string; cou
  * range is a plain string comparison — no date functions, no timezone maths in
  * the database. The caller (timerange.ts) owns what the boundaries mean.
  */
-export async function searchInRange(input: {
-  fromIso: string;
-  toIso: string;
-  query?: string;
-  limit?: number;
-  /** What window this was, for the log — e.g. "the last 3 weeks". */
-  label?: string;
-  source?: string;
-}): Promise<Memory[]> {
+export async function searchInRange(
+  input: MemoryScope & {
+    fromIso: string;
+    toIso: string;
+    query?: string;
+    limit?: number;
+    /** What window this was, for the log — e.g. "the last 3 weeks". */
+    label?: string;
+    source?: string;
+  },
+): Promise<Memory[]> {
   return logged(() => searchInRangeUnlogged(input), {
     query: input.query,
     mode: input.label ? `window:${input.label}` : "range",
+    kind: input.kind,
+    workspace: input.workspace,
+    project: input.project,
     source: input.source,
   });
 }
 
-async function searchInRangeUnlogged(input: {
-  fromIso: string;
-  toIso: string;
-  query?: string;
-  limit?: number;
-}): Promise<Memory[]> {
+async function searchInRangeUnlogged(
+  input: MemoryScope & {
+    fromIso: string;
+    toIso: string;
+    query?: string;
+    limit?: number;
+  },
+): Promise<Memory[]> {
   await ensureSchema();
   const query = (input.query ?? "").trim().slice(0, 240);
   const pattern = `%${query.toLocaleLowerCase()}%`;
@@ -442,6 +590,7 @@ async function searchInRangeUnlogged(input: {
     args: [
       input.fromIso, input.toIso,
       query, pattern, pattern, pattern,
+      ...scopeArgs(input),
       clampLimit(input.limit),
     ],
   });
@@ -497,19 +646,16 @@ export interface SemanticResult {
 }
 
 /** Nearest neighbours. Throws only if embedding the QUERY fails. */
-export async function searchSemantic(input: {
-  query: string;
-  kind?: MemoryKind;
-  project?: string;
-  limit?: number;
-  source?: string;
-}): Promise<SemanticResult> {
+export async function searchSemantic(
+  input: MemoryScope & { query: string; limit?: number; source?: string },
+): Promise<SemanticResult> {
   const started = Date.now();
   const result = await searchSemanticNoLog(input);
   if (input.query.trim()) void recordSearch({
     query: input.query,
     mode: "semantic",
     kind: input.kind,
+    workspace: input.workspace,
     project: input.project,
     resultIds: result.memories.map((m) => m.id),
     durationMs: Date.now() - started,
@@ -518,12 +664,9 @@ export async function searchSemantic(input: {
   return result;
 }
 
-export async function searchSemanticNoLog(input: {
-  query: string;
-  kind?: MemoryKind;
-  project?: string;
-  limit?: number;
-}): Promise<SemanticResult> {
+export async function searchSemanticNoLog(
+  input: MemoryScope & { query: string; limit?: number },
+): Promise<SemanticResult> {
   await ensureSchema();
   const p = embeddings();
   if (!p) throw new Error("embeddings are not configured");
@@ -532,12 +675,10 @@ export async function searchSemanticNoLog(input: {
   if (!vector) throw new Error("query produced no embedding");
 
   const literal = toVectorLiteral(vector);
-  const kind = input.kind ? normalizeKind(input.kind) : "";
-  const project = normalizeProject(input.project);
 
   const result = await db().execute({
     sql: VECTORS.search,
-    args: [literal, kind, kind, project, project, literal, clampLimit(input.limit)],
+    args: [literal, ...scopeArgs(input), literal, clampLimit(input.limit)],
   });
 
   const found = rows<MemoryRow & { distance: number }>(result);

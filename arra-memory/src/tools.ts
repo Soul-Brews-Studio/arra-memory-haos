@@ -32,8 +32,10 @@ const PROTECTED: Record<string, string> = {
   // Discovery. Hiding these turns a narrowed tool list into a dead end — a
   // model with its generated tools switched off has no way left to find out
   // what the corpus contains.
+  list_workspaces: "it is how the corpus is discovered",
   list_projects: "it is how the corpus is discovered",
   list_tags: "it is how the corpus is discovered",
+  list_agents: "it is how the corpus is discovered",
   memory_stats: "it is how the corpus is discovered",
   // Self-management. Disabling these over MCP removes the only MCP-side way to
   // switch anything back on: a client could lock itself out of its own

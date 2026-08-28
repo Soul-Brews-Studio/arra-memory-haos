@@ -1,4 +1,5 @@
 import type {
+  AgentFacet,
   EmbeddingCoverage,
   Health,
   Memory,
@@ -6,7 +7,9 @@ import type {
   MemoryStats,
   SearchLogEntry,
   SearchLogStats,
+  ProjectFacet,
   ToolInfo,
+  WorkspaceFacet,
 } from "./types";
 
 /**
@@ -62,10 +65,25 @@ export const api = {
   },
 
   memories: {
-    search: (params: { q?: string; kind?: MemoryKind | ""; limit?: number }) => {
+    search: (params: {
+      q?: string;
+      kind?: MemoryKind | "";
+      workspace?: string;
+      project?: string;
+      createdBy?: string;
+      tag?: string;
+      limit?: number;
+    }) => {
       const search = new URLSearchParams();
       if (params.q) search.set("q", params.q);
       if (params.kind) search.set("kind", params.kind);
+      // Each omitted when empty rather than sent blank: the server reads an
+      // empty value as "do not filter", so sending "" would work by accident
+      // and mean something different the day that changes.
+      if (params.workspace) search.set("workspace", params.workspace);
+      if (params.project) search.set("project", params.project);
+      if (params.createdBy) search.set("createdBy", params.createdBy);
+      if (params.tag) search.set("tag", params.tag);
       if (params.limit) search.set("limit", String(params.limit));
       const qs = search.toString();
       return call<{ memories: Memory[]; count: number }>(
@@ -79,6 +97,8 @@ export const api = {
       kind?: MemoryKind;
       tags?: string[];
       importance?: number;
+      workspace?: string;
+      project?: string;
     }) =>
       call<{ memory: Memory }>("/api/memories", {
         method: "POST",
@@ -95,6 +115,29 @@ export const api = {
       call<{ id: string; deleted: boolean }>(`/api/memories/${id}`, {
         method: "DELETE",
       }),
+  },
+
+  /**
+   * How the corpus is divided. Two calls because there are two levels: the
+   * workspaces, and what is inside one of them.
+   */
+  workspaces: {
+    list: () =>
+      call<{
+        workspaces: WorkspaceFacet[];
+        /** Memories filed under no workspace. Shown, never hidden. */
+        unassigned: number;
+        agents: AgentFacet[];
+      }>("/api/workspaces"),
+
+    get: (name: string) =>
+      call<{
+        workspace: string;
+        projects: ProjectFacet[];
+        agents: AgentFacet[];
+        tags: Array<{ tag: string; count: number }>;
+        memories: Memory[];
+      }>(`/api/workspaces/${encodeURIComponent(name)}`),
   },
 
   stats: () => call<{ stats: MemoryStats; embeddings: EmbeddingCoverage }>("/api/stats"),

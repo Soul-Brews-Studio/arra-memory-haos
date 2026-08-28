@@ -27,6 +27,17 @@ export const SCHEMA: string[] = [
      -- Provenance. Structured columns rather than tags, because "which project"
      -- and "where did this come from" are things you filter and group by, and a
      -- tag list cannot be indexed for either.
+     --
+     -- workspace is the tier ABOVE project: one workspace holds many projects.
+     -- It is a plain column and there is no workspaces table, so the hierarchy
+     -- is DERIVED: SELECT DISTINCT workspace, project is the whole of it. That
+     -- keeps a workspace free to appear the moment an agent writes into it and to
+     -- vanish when the last memory leaves, with nothing to keep in step.
+     --
+     -- Empty means UNSET, exactly as it does for project: an unset value matches
+     -- every filter rather than forming a "none" bucket, so nothing an agent
+     -- wrote before this column existed becomes invisible.
+     workspace   TEXT NOT NULL DEFAULT '',
      project     TEXT NOT NULL DEFAULT '',
      url         TEXT NOT NULL DEFAULT '',
      created_by  TEXT NOT NULL DEFAULT '',
@@ -44,6 +55,12 @@ export const SCHEMA: string[] = [
      ON memories(importance DESC, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS memories_project_idx
      ON memories(project, updated_at DESC)`,
+  // NOTE: indexes over `workspace` live in MIGRATIONS, not here. This batch runs
+  // BEFORE the ALTER TABLE statements, and `CREATE TABLE IF NOT EXISTS` is a
+  // no-op on an existing database — so an index naming a migrated column fails
+  // with "no such column" on exactly the upgrade path, while passing on a fresh
+  // database where CREATE TABLE supplied it. memories_embedding_idx is in
+  // MIGRATIONS for the same reason.
 
   // ── full-text search ───────────────────────────────────────────────────────
   //
@@ -134,6 +151,10 @@ export const SCHEMA: string[] = [
      query        TEXT NOT NULL DEFAULT '',
      mode         TEXT NOT NULL DEFAULT 'keyword',
      kind         TEXT NOT NULL DEFAULT '',
+     -- The log records the filters a search ran under, so it has to learn every
+     -- new one. Without this column the log would answer "who searched inside
+     -- which workspace" with a confident blank.
+     workspace    TEXT NOT NULL DEFAULT '',
      project      TEXT NOT NULL DEFAULT '',
      tag          TEXT NOT NULL DEFAULT '',
      result_count INTEGER NOT NULL DEFAULT 0,
@@ -181,15 +202,33 @@ export const KV = {
 // ── memories ──────────────────────────────────────────────────────────────────
 
 const MEMORY_COLUMNS = `id, title, content, kind, tags, source, importance,
-                        project, url, created_by, created_at, updated_at`;
+                        workspace, project, url, created_by, created_at, updated_at`;
+
+/**
+ * The scope filters, in the one order every statement below uses.
+ *
+ * Each is the same `(? = '' OR col = ?)` shape: an empty argument disables that
+ * filter entirely. That is what makes an unscoped search return the whole corpus
+ * — a client that knows nothing about workspaces keeps working exactly as it did
+ * — while a scoped one narrows without a second code path.
+ *
+ * `prefix` exists because the FTS and vector statements alias the table.
+ * args in every case: kind, kind, workspace, workspace, project, project,
+ *                     createdBy, createdBy
+ */
+const scopeFilter = (prefix = "") => `
+              AND (? = '' OR ${prefix}kind = ?)
+              AND (? = '' OR ${prefix}workspace = ?)
+              AND (? = '' OR ${prefix}project = ?)
+              AND (? = '' OR ${prefix}created_by = ?)`;
 
 export const MEMORIES = {
   // args: id, title, content, kind, tags, source, importance,
-  //       project, url, createdBy, now, now
+  //       workspace, project, url, createdBy, now, now
   insert: `INSERT INTO memories
              (id, title, content, kind, tags, source, importance,
-              project, url, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              workspace, project, url, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 
   //                                          args: id
   byId: `SELECT ${MEMORY_COLUMNS} FROM memories WHERE id = ?`,
@@ -210,16 +249,14 @@ export const MEMORIES = {
    *
    * Title is weighted 3x and tags 2x against content, so a query that matches
    * a title outranks one buried in a paragraph.
-   * args: match, kind, kind, project, project, limit
+   * args: match, then the eight scope arguments, then limit
    */
   searchFts: `SELECT m.id, m.title, m.content, m.kind, m.tags, m.source,
-                     m.importance, m.project, m.url, m.created_by,
+                     m.importance, m.workspace, m.project, m.url, m.created_by,
                      m.created_at, m.updated_at
                 FROM memories_fts f
                 JOIN memories m ON m.rowid = f.rowid
-               WHERE memories_fts MATCH ?
-                 AND (? = '' OR m.kind = ?)
-                 AND (? = '' OR m.project = ?)
+               WHERE memories_fts MATCH ?${scopeFilter("m.")}
                ORDER BY bm25(memories_fts, 3.0, 1.0, 2.0),
                         m.importance DESC,
                         m.updated_at DESC
@@ -228,15 +265,13 @@ export const MEMORIES = {
   /** Rebuilds the FTS index from the corpus. Used after a schema upgrade. */
   rebuildFts: `INSERT INTO memories_fts(memories_fts) VALUES ('rebuild')`,
 
-  // args: query, pattern, pattern, pattern, kind, kind, project, project,
+  // args: query, pattern, pattern, pattern, <eight scope arguments>,
   //       tag, tagPattern, query, query, query, pattern, query, pattern, limit
   search: `SELECT ${MEMORY_COLUMNS}
              FROM memories
             WHERE (? = '' OR lower(title) LIKE ?
                           OR lower(content) LIKE ?
-                          OR lower(tags) LIKE ?)
-              AND (? = '' OR kind = ?)
-              AND (? = '' OR project = ?)
+                          OR lower(tags) LIKE ?)${scopeFilter()}
               AND (? = '' OR lower(tags) LIKE ?)
             ORDER BY
               CASE
@@ -250,11 +285,11 @@ export const MEMORIES = {
             LIMIT ?`,
 
   // args: title, content, kind, tags, source, importance,
-  //       project, url, createdBy, updatedAt, id
+  //       workspace, project, url, createdBy, updatedAt, id
   update: `UPDATE memories
               SET title = ?, content = ?, kind = ?, tags = ?,
-                  source = ?, importance = ?, project = ?, url = ?,
-                  created_by = ?, updated_at = ?
+                  source = ?, importance = ?, workspace = ?, project = ?,
+                  url = ?, created_by = ?, updated_at = ?
             WHERE id = ?`,
 
   //                                          args: id
@@ -280,17 +315,70 @@ export const MEMORIES = {
   // These are what make `tools/list` reflect the corpus instead of a fixed
   // list: each distinct project below becomes its own recall tool.
   facets: {
+    // args: workspace, workspace, limit
     projects: `SELECT project, COUNT(*) AS count, MAX(updated_at) AS latest
                  FROM memories
                 WHERE project <> ''
+                  AND (? = '' OR workspace = ?)
                 GROUP BY project
                 ORDER BY count DESC, project ASC
                 LIMIT ?`,
+    // args: workspace, workspace, limit
     allTags: `SELECT value AS tag, COUNT(*) AS count
                 FROM memories, json_each(memories.tags)
+               WHERE (? = '' OR memories.workspace = ?)
                GROUP BY value
                ORDER BY count DESC, value ASC
                LIMIT ?`,
+
+    /**
+     * The workspaces, and what each one contains.
+     *
+     * There is no workspaces table, so this query IS the workspace list — a
+     * workspace exists exactly as long as a memory names it. The two DISTINCT
+     * counts are what make the tier above `project` worth having: they answer
+     * "how many projects and how many agents are in here" without a second
+     * round trip per row.
+     *
+     * NULLIF maps the unset sentinel to NULL so COUNT(DISTINCT ...) skips it —
+     * without it, "no project" would be counted as a project named "".
+     * args: limit
+     */
+    workspaces: `SELECT workspace,
+                        COUNT(*) AS count,
+                        COUNT(DISTINCT NULLIF(project, ''))    AS projects,
+                        COUNT(DISTINCT NULLIF(created_by, '')) AS agents,
+                        MAX(updated_at) AS latest
+                   FROM memories
+                  WHERE workspace <> ''
+                  GROUP BY workspace
+                  ORDER BY count DESC, workspace ASC
+                  LIMIT ?`,
+
+    /**
+     * How many memories name no workspace at all.
+     *
+     * The list above hides them, and a Workspaces page that silently omits part
+     * of the corpus is a lie told by omission — this is what lets the page say
+     * so out loud. args: none
+     */
+    unassigned: `SELECT COUNT(*) AS count FROM memories WHERE workspace = ''`,
+
+    /**
+     * Who has written to the corpus. Optionally within one workspace.
+     *
+     * `created_by` has been stored since the first release and was filterable by
+     * nothing — this is the query that turns it into a facet.
+     * args: workspace, workspace, limit
+     */
+    agents: `SELECT created_by AS agent, COUNT(*) AS count,
+                    MAX(updated_at) AS latest
+               FROM memories
+              WHERE created_by <> ''
+                AND (? = '' OR workspace = ?)
+              GROUP BY created_by
+              ORDER BY count DESC, created_by ASC
+              LIMIT ?`,
 
     // Which calendar months the corpus actually spans. Each becomes its own
     // search tool, so a model is offered `search_2026_08` only when there is
@@ -306,13 +394,14 @@ export const MEMORIES = {
   // created_at is ISO-8601 UTC, which sorts lexicographically — so a range is a
   // plain string BETWEEN and needs no date parsing in SQLite. Both bounds are
   // inclusive of the strings passed; the caller decides the boundaries.
-  // args: fromIso, toIso, query, pattern, pattern, pattern, limit
+  // args: fromIso, toIso, query, pattern, pattern, pattern,
+  //       <eight scope arguments>, limit
   inRange: `SELECT ${MEMORY_COLUMNS}
               FROM memories
              WHERE created_at >= ? AND created_at <= ?
                AND (? = '' OR lower(title) LIKE ?
                            OR lower(content) LIKE ?
-                           OR lower(tags) LIKE ?)
+                           OR lower(tags) LIKE ?)${scopeFilter()}
              ORDER BY created_at DESC
              LIMIT ?`,
 } as const;
@@ -329,6 +418,23 @@ export const MIGRATIONS: string[] = [
   `ALTER TABLE memories ADD COLUMN project    TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE memories ADD COLUMN url        TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE memories ADD COLUMN created_by TEXT NOT NULL DEFAULT ''`,
+
+  // The workspace tier, added in 0.10.0. Existing rows get '' — unset, not
+  // "default" — so every memory written before workspaces existed stays visible
+  // to every search rather than being filed under a bucket nobody asked for.
+  `ALTER TABLE memories   ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE search_log ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
+
+  // These two must come AFTER the ALTER above and must not be in SCHEMA — see
+  // the note there. Leading on workspace then project makes one index serve
+  // both "everything in this workspace" and "this project inside it", since a
+  // composite index is usable by any prefix of its columns.
+  `CREATE INDEX IF NOT EXISTS memories_workspace_idx
+     ON memories(workspace, project, updated_at DESC)`,
+  // "Which agent wrote this" is a filter now rather than a stored-and-forgotten
+  // column, so it needs an index to be one.
+  `CREATE INDEX IF NOT EXISTS memories_created_by_idx
+     ON memories(created_by, updated_at DESC)`,
 
   // Semantic search. F32_BLOB is a libSQL native type, not an extension —
   // 1024 to match bge-m3. The width is fixed at column-creation time, so
@@ -395,23 +501,26 @@ export const OAUTH = {
 
 // ── the search log ────────────────────────────────────────────────────────────
 
+const SEARCH_LOG_COLUMNS = `id, query, mode, kind, workspace, project, tag,
+                            result_count, result_ids, duration_ms, source,
+                            created_at`;
+
 export const SEARCH_LOG = {
-  // args: id, query, mode, kind, project, tag, count, idsJson, ms, source, now
+  // args: id, query, mode, kind, workspace, project, tag,
+  //       count, idsJson, ms, source, now
   record: `INSERT INTO search_log
-             (id, query, mode, kind, project, tag,
+             (id, query, mode, kind, workspace, project, tag,
               result_count, result_ids, duration_ms, source, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 
   // args: limit
-  list: `SELECT id, query, mode, kind, project, tag,
-                result_count, result_ids, duration_ms, source, created_at
+  list: `SELECT ${SEARCH_LOG_COLUMNS}
            FROM search_log
           ORDER BY created_at DESC
           LIMIT ?`,
 
   // Substring match over the recorded queries. args: pattern, limit
-  find: `SELECT id, query, mode, kind, project, tag,
-                result_count, result_ids, duration_ms, source, created_at
+  find: `SELECT ${SEARCH_LOG_COLUMNS}
            FROM search_log
           WHERE lower(query) LIKE ?
           ORDER BY created_at DESC
@@ -446,15 +555,13 @@ export const VECTORS = {
    * a NULL vector is "not indexed yet", which is not the same as "unrelated",
    * and letting it score would be a quiet lie.
    *
-   * args: vectorLiteral, kind, kind, project, project, vectorLiteral, limit
+   * args: vectorLiteral, <eight scope arguments>, vectorLiteral, limit
    */
   search: `SELECT id, title, content, kind, tags, source, importance,
-                  project, url, created_by, created_at, updated_at,
+                  workspace, project, url, created_by, created_at, updated_at,
                   vector_distance_cos(embedding, vector32(?)) AS distance
              FROM memories
-            WHERE embedding IS NOT NULL
-              AND (? = '' OR kind = ?)
-              AND (? = '' OR project = ?)
+            WHERE embedding IS NOT NULL${scopeFilter()}
             ORDER BY vector_distance_cos(embedding, vector32(?)) ASC
             LIMIT ?`,
 

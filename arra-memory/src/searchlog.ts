@@ -24,6 +24,7 @@ export interface SearchLogEntry {
   query: string;
   mode: string;
   kind: string;
+  workspace: string;
   project: string;
   tag: string;
   resultCount: number;
@@ -38,6 +39,7 @@ interface SearchLogRow {
   query: string;
   mode: string;
   kind: string;
+  workspace: string;
   project: string;
   tag: string;
   result_count: number;
@@ -60,6 +62,7 @@ function toEntry(row: SearchLogRow): SearchLogEntry {
     query: row.query,
     mode: row.mode,
     kind: row.kind ?? "",
+    workspace: row.workspace ?? "",
     project: row.project ?? "",
     tag: row.tag ?? "",
     resultCount: Number(row.result_count),
@@ -83,6 +86,7 @@ export async function recordSearch(entry: {
   query?: string;
   mode?: string;
   kind?: string;
+  workspace?: string;
   project?: string;
   tag?: string;
   resultIds: string[];
@@ -99,6 +103,7 @@ export async function recordSearch(entry: {
         (entry.query ?? "").slice(0, 240),
         entry.mode ?? "keyword",
         entry.kind ?? "",
+        entry.workspace ?? "",
         entry.project ?? "",
         entry.tag ?? "",
         entry.resultIds.length,

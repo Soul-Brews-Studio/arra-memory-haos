@@ -12,6 +12,10 @@ import {
   getMemory,
   getMemoryStats,
   indexMemory,
+  listAgents,
+  listProjects,
+  listTags,
+  listWorkspaces,
   searchMemories,
   searchSemantic,
   updateMemory,
@@ -413,10 +417,62 @@ const app = new Elysia()
     const memories = await searchMemories({
       query,
       kind,
+      // The archive's filter bar. Absent means unfiltered, exactly as it does
+      // over MCP — one filter contract, two front doors.
+      workspace: url.searchParams.get("workspace") ?? undefined,
+      project: url.searchParams.get("project") ?? undefined,
+      createdBy: url.searchParams.get("createdBy") ?? undefined,
+      tag: url.searchParams.get("tag") ?? undefined,
       limit: Number(url.searchParams.get("limit")) || undefined,
       source: "web",
     });
     return json({ memories, count: memories.length });
+  })
+
+  // ── how the corpus is divided ──────────────────────────────────────────────
+  // Two levels, two endpoints: the list of workspaces, and what is inside one.
+  // Both are derived from the memories table on every call — there is no
+  // workspace registry to fall out of step with what has actually been written.
+  .get("/api/workspaces", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const url = new URL(request.url);
+    const [{ workspaces, unassigned }, agents] = await Promise.all([
+      listWorkspaces(Number(url.searchParams.get("limit")) || 50),
+      // The corpus-wide agent list, so the archive's filter bar can be built
+      // from one request rather than one per workspace.
+      listAgents(50),
+    ]);
+    return json({ workspaces, unassigned, agents });
+  })
+
+  .get("/api/workspaces/:name", async ({ request, params }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const name = decodeURIComponent(params.name);
+    // Refused rather than served, because an empty workspace argument means
+    // "do not filter on workspace" everywhere else in this codebase — so an
+    // empty name here would silently return the ENTIRE corpus under the heading
+    // of one workspace. The unfiled memories are still reachable: they are in
+    // the archive with no workspace filter applied. Giving them a page of their
+    // own needs a sentinel the filter idiom does not have yet.
+    if (!name.trim()) {
+      return json(
+        {
+          error: "invalid",
+          message:
+            "A workspace name is required. Memories with no workspace are not a workspace — browse the archive unfiltered to see them.",
+        },
+        400,
+      );
+    }
+    const [projects, agents, tags, memories] = await Promise.all([
+      listProjects(50, name),
+      listAgents(50, name),
+      listTags(50, name),
+      searchMemories({ workspace: name, limit: 20, source: "web" }),
+    ]);
+    return json({ workspace: name, projects, agents, tags, memories });
   })
 
   .get("/api/memories/:id", async ({ request, params }) => {
@@ -477,7 +533,17 @@ const app = new Elysia()
     const body = (await request.json().catch(() => ({}))) as any;
     const requestedMode: "keyword" | "semantic" | "hybrid" = body.mode ?? "hybrid";
     const query = String(body.query ?? "");
-    const common = { kind: body.kind, project: body.project, limit: body.limit };
+    // One scope object threaded through every branch below, so keyword,
+    // semantic and hybrid cannot drift into filtering on different things —
+    // a hybrid pass whose two halves disagreed on workspace would silently
+    // fuse results from inside and outside it.
+    const common = {
+      kind: body.kind,
+      workspace: body.workspace,
+      project: body.project,
+      createdBy: body.createdBy,
+      limit: body.limit,
+    };
 
     if (requestedMode === "keyword" || !query.trim()) {
       const memories = await searchMemories({ query, ...common, tag: body.tag, source: "web" });
@@ -491,7 +557,8 @@ const app = new Elysia()
       const semantic = await searchSemanticNoLog({ query, ...common });
       if (requestedMode === "semantic") {
         if (query.trim()) void recordSearch({
-          query, mode: "semantic", kind: body.kind, project: body.project,
+          query, mode: "semantic", kind: body.kind,
+          workspace: body.workspace, project: body.project,
           resultIds: semantic.memories.map((m) => m.id),
           durationMs: Date.now() - started,
           source: "web",
@@ -523,7 +590,8 @@ const app = new Elysia()
         .map(([id]) => byId.get(id));
 
       if (query.trim()) void recordSearch({
-        query, mode: "hybrid", kind: body.kind, project: body.project,
+        query, mode: "hybrid", kind: body.kind,
+        workspace: body.workspace, project: body.project,
         resultIds: merged.map((m: any) => m.id),
         durationMs: Date.now() - started,
         source: "web",

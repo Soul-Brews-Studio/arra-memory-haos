@@ -93,6 +93,20 @@ export function normalizeProject(value: string | undefined): string {
 }
 
 /**
+ * A workspace identifier — the tier above project.
+ *
+ * Normalised identically to project, and for a sharper reason: there is no
+ * workspaces table, so a workspace exists purely because memories agree on how
+ * it is spelled. "haos oracle" and "haos  oracle" arriving as two workspaces
+ * would split a team's corpus in half with nothing to reconcile them.
+ *
+ * Empty is legal and means UNSET. It is not a workspace named "none".
+ */
+export function normalizeWorkspace(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, " ").slice(0, 120) ?? "";
+}
+
+/**
  * A reference URL. Only http(s) is accepted — a memory is stored data that a
  * UI will render as a link, and `javascript:` there is a scripting hole.
  * An unparseable value is rejected rather than silently dropped.

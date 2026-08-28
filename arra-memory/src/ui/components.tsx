@@ -99,6 +99,14 @@ export function MemoryCard({
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
             <KindChip kind={memory.kind} />
             <Importance value={memory.importance} />
+            {/* Where this memory lives, on the card rather than behind a click.
+                A shared corpus where you cannot tell whose memory you are
+                reading is the problem workspaces exist to fix; hiding the answer
+                one level down would have solved it only in the database. */}
+            {memory.workspace && (
+              <Provenance label={memory.workspace} title="Workspace" accent />
+            )}
+            {memory.project && <Provenance label={memory.project} title="Project" />}
           </div>
 
           <h3 className="mb-2 text-[0.98rem] font-semibold leading-snug text-ink">
@@ -141,6 +149,12 @@ export function MemoryCard({
             <span title={memory.updatedAt}>{timeAgo(memory.updatedAt)}</span>
             <span aria-hidden="true">·</span>
             <span>{memory.source}</span>
+            {memory.createdBy && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span title="Written by">by {memory.createdBy}</span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <span className="truncate opacity-60">{memory.id.slice(0, 8)}</span>
           </div>
@@ -187,6 +201,36 @@ export function MemoryCard({
         </div>
       </div>
     </article>
+  );
+}
+
+/**
+ * A workspace or project name on a card.
+ *
+ * Deliberately quieter than the kind chip and quieter still than the title: it
+ * answers "where is this from" at a glance without competing with what the
+ * memory actually says.
+ */
+function Provenance({
+  label,
+  title,
+  accent,
+}: {
+  label: string;
+  title: string;
+  accent?: boolean;
+}) {
+  return (
+    <span
+      title={title}
+      className="max-w-[12rem] truncate rounded border px-1.5 py-0.5 font-mono text-[0.68rem]"
+      style={{
+        borderColor: accent ? "var(--color-ember)" : "var(--color-line)",
+        color: accent ? "var(--color-ember)" : "var(--color-dim)",
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
