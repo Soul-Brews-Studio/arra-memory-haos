@@ -169,7 +169,51 @@ Three failure rules, all verified:
 - `semantic` **fails with 503** rather than degrading, because a caller who asked
   for semantic specifically deserves to know it did not happen.
 
-`POST /api/index/backfill` embeds memories written before you turned this on.
+#### When a memory gets embedded
+
+Embedding is a property of the write, not something a caller opts into. Since
+**0.22.0** it happens inside `createMemory` and `updateMemory`, so every surface
+gets it for free:
+
+| You do this | Embedded? |
+|---|---|
+| `remember` over MCP (claude.ai, Claude Code) | ✅ on write |
+| `POST /api/memories` (the web UI) | ✅ on write |
+| `revise_memory` / `PATCH`, **title or content changed** | ✅ re-embedded |
+| `revise_memory` / `PATCH`, only tags/importance/project/url | — not needed |
+| Anything written before you configured `ollama_url` | via backfill |
+
+Two details that follow from that:
+
+- **The write returns before the vector lands.** Indexing is fire-and-forget by
+  contract, so a `remember` that answers instantly has not necessarily been
+  embedded *yet* — it will be, within a second or so. Only `ollama_url` being
+  unset or unreachable makes it never happen, and a write still succeeds then.
+- **A metadata-only edit does not re-embed.** The embedded text is
+  `title\n\ncontent`; a tag cannot move the vector, so it does not pay for a
+  round trip to the model.
+
+`POST /api/index/backfill` covers the remaining case — memories written before
+embeddings were switched on, or when the model changed. It selects rows whose
+embedding is `NULL` **or** whose `embedding_model` differs, so it is safe to
+re-run and cheap when there is nothing to do:
+
+```bash
+curl -X POST http://<host>:8099/api/index/backfill \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"limit":50}'
+# → {"indexed":7}
+```
+
+> **Historical note, worth knowing if you run an older build.** Before 0.22.0,
+> indexing was a *call-site* concern and only the REST handler did it — so every
+> memory written over MCP went in unvectorised, and revising a memory left the
+> old vector in place forever. That second case could not be repaired by
+> backfill: a revised row has a non-null vector from a matching model, so it
+> matches neither half of the `pending` predicate, and its vector went on
+> describing text that no longer existed. If you are upgrading from ≤0.21.0, run
+> the backfill once for the unvectorised rows; anything revised under an old
+> build needs its title or content touched again to be re-embedded.
 
 **Reaching the Ollama server from inside the add-on.** An add-on container sits
 on Home Assistant's own Docker bridge. It can reach your LAN, but it has *no
