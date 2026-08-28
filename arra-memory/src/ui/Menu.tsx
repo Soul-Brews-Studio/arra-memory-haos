@@ -108,22 +108,29 @@ export function Panel({
   return (
     <>
       <header className="lamp border-b border-line">
-        <div className="mx-auto max-w-4xl px-5 pb-5 pt-7">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="eyebrow mb-1.5">{eyebrow}</p>
-              <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
-              {subtitle && <p className="mt-2 max-w-2xl text-sm text-dim">{subtitle}</p>}
-            </div>
+        <div className="mx-auto max-w-4xl px-5 pb-5 pt-6">
+          {/* The nav gets its own full-width row above the title.
+              It used to sit opposite the title in a justify-between row, which
+              left it roughly half the header to fit six buttons in — so it
+              wrapped onto a second line and the whole bar changed height
+              depending on how long the page title was. A nav that moves when
+              you navigate is not a nav bar. Full width, one row, same place. */}
+          <div className="mb-5">
             {nav ?? (
               <button
                 type="button"
                 onClick={onClose}
-                className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-sm text-dim transition-colors hover:border-line-bright hover:text-ink"
+                className="rounded-lg border border-line px-3 py-1.5 text-sm text-dim transition-colors hover:border-line-bright hover:text-ink"
               >
                 ← Archive
               </button>
             )}
+          </div>
+
+          <div className="min-w-0">
+            <p className="eyebrow mb-1.5">{eyebrow}</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
+            {subtitle && <p className="mt-2 max-w-2xl text-sm text-dim">{subtitle}</p>}
           </div>
           {actions && <div className="mt-4">{actions}</div>}
         </div>

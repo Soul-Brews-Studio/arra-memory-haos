@@ -46,6 +46,7 @@ import {
   searchLogStats,
 } from "./searchlog";
 import { escapeHtml, readCookie, timingSafeEqual, type MemoryKind } from "./utils";
+import { replicaStatus } from "./db";
 import { VERSION } from "./version";
 
 const PORT = Number(process.env.PORT ?? 8099);
@@ -209,7 +210,18 @@ const app = new Elysia()
         ? (process.env.EMBEDDING_MODEL?.trim() || "bge-m3")
         : null,
       searchLog: (process.env.SEARCH_LOG ?? "").trim().toLowerCase() === "true",
-      replica: Boolean(process.env.TURSO_SYNC_URL?.trim()),
+      // Reports whether replication is WORKING, not whether it was asked for.
+      // The old form read the option and said true — which it did while the
+      // replica was failing every single query, so the one field anyone would
+      // check to answer "is my corpus being copied to Turso" was the field that
+      // said yes throughout the outage.
+      replica: replicaStatus().active,
+      // Present only when replication was configured and is not running, so a
+      // silent fallback to local-only is visible from the health endpoint
+      // rather than only in a log nobody is reading.
+      ...(replicaStatus().requested && !replicaStatus().active
+        ? { replicaError: replicaStatus().error }
+        : {}),
       apiToken: Boolean(process.env.API_TOKEN),
     },
   }))

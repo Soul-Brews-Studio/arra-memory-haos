@@ -6,6 +6,7 @@ import { Tools } from "./Tools";
 import { Workspaces } from "./Workspaces";
 import { ScopeBar } from "./ScopeBar";
 import { NavBar, Panel } from "./Menu";
+import { EMPTY_ROUTE, useRoute, type View } from "./route";
 import {
   MEMORY_KINDS,
   type AgentFacet,
@@ -37,9 +38,21 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>("checking");
   const [memories, setMemories] = useState<Memory[]>([]);
   const [stats, setStats] = useState<MemoryStats | null>(null);
-  const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<MemoryKind | "">("");
-  const [scope, setScope] = useState<Scope>(NO_SCOPE);
+  // The address bar is the source of truth for what is on screen: which view,
+  // what was searched, and what it was scoped to. Reloading, sharing a link and
+  // the back button all work because there is nowhere else for that state to
+  // hide.
+  const [route, navigate] = useRoute();
+  const { view, query, kind } = route;
+  const scope: Scope = {
+    workspace: route.workspace,
+    project: route.project,
+    createdBy: route.createdBy,
+  };
+  const setView = (next: View) => navigate({ ...route, view: next });
+  const setQuery = (next: string) => navigate({ ...route, query: next });
+  const setKind = (next: MemoryKind | "") => navigate({ ...route, kind: next });
+  const setScope = (next: Scope) => navigate({ ...route, ...next });
   // The vocabulary the filter bar offers, fetched once and refreshed on write.
   const [facets, setFacets] = useState<{ workspaces: WorkspaceFacet[]; agents: AgentFacet[] }>({
     workspaces: [],
@@ -48,9 +61,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
-  // One view at a time. These were modals over the archive; a search log with
-  // hundreds of rows is a page, not something to read through a window.
-  const [view, setView] = useState<"archive" | "log" | "tools" | "workspaces">("archive");
   const [health, setHealth] = useState<Health | null>(null);
 
   const searchRef = useSlashFocus();
@@ -94,7 +104,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [query, kind, scope]);
+  }, [query, kind, scope.workspace, scope.project, scope.createdBy]);
 
   // Debounced: the corpus is searched on every keystroke, and a local libSQL
   // file is fast enough that 180ms is about perception, not about load.
@@ -163,9 +173,7 @@ export default function App() {
         // scopes the archive and takes you there, rather than showing a second
         // list of memories that would then have to stay in step with the real one.
         onFilter={(next) => {
-          setScope({ ...NO_SCOPE, ...next });
-          setQuery("");
-          setView("archive");
+          navigate({ ...EMPTY_ROUTE, view: "archive", ...next });
         }}
       />
     ) : view === "tools" ? (
@@ -179,14 +187,17 @@ export default function App() {
         // else uses — so it is recorded, and the log grows an entry for the
         // replay. That is correct: it genuinely was a search.
         onReplay={(entry) => {
-          setQuery(entry.query);
-          setKind((entry.kind as MemoryKind) || "");
-          setScope({
+          // One navigate, not four setters: each would be a separate route
+          // write, and the first three would be clobbered by the last since
+          // they all derive `next` from the same stale route.
+          navigate({
+            view: "archive",
+            query: entry.query,
+            kind: (entry.kind as MemoryKind) || "",
             workspace: entry.workspace,
             project: entry.project,
             createdBy: "",
           });
-          setView("archive");
         }}
       />
     ) : (
