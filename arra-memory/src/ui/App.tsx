@@ -3,7 +3,7 @@ import { ApiError, api } from "./api";
 import { KindFilter, MemoryCard, useSlashFocus } from "./components";
 import { SearchLog } from "./SearchLog";
 import { Tools } from "./Tools";
-import { Menu } from "./Menu";
+import { NavBar } from "./Menu";
 import { MEMORY_KINDS, type Health, type Memory, type MemoryKind, type MemoryStats } from "./types";
 
 type Phase = "checking" | "locked" | "ready";
@@ -82,41 +82,33 @@ export default function App() {
               </h1>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setComposing(true)}
-                className="rounded-lg bg-ember px-3 py-1.5 text-sm font-semibold text-[#17130e] transition hover:brightness-110"
-              >
-                Remember
-              </button>
-              <Menu
-                items={[
-                  {
-                    label: "MCP tools",
-                    hint: "What this connector offers, and what to switch off",
-                    onSelect: () => setShowTools(true),
-                  },
-                  ...(health?.features.searchLog
-                    ? [{
-                        label: "Search log",
-                        hint: "What has been looked for",
-                        onSelect: () => setShowLog(true),
-                      }]
-                    : []),
-                  {
-                    label: "Lock the archive",
-                    hint: "End this session",
-                    danger: true,
-                    onSelect: () =>
-                      void api.session.close().finally(() => {
-                        setPhase("locked");
-                        setMemories([]);
-                      }),
-                  },
-                ]}
-              />
-            </div>
+            <NavBar
+              primary={{ label: "Remember", onSelect: () => setComposing(true) }}
+              items={[
+                {
+                  label: "Tools",
+                  title: "Which MCP tools this connector offers, and what to switch off",
+                  onSelect: () => setShowTools(true),
+                },
+                ...(health?.features.searchLog
+                  ? [{
+                      label: "Search log",
+                      title: "What has been looked for",
+                      onSelect: () => setShowLog(true),
+                    }]
+                  : []),
+                {
+                  label: "Lock",
+                  title: "End this session",
+                  danger: true,
+                  onSelect: () =>
+                    void api.session.close().finally(() => {
+                      setPhase("locked");
+                      setMemories([]);
+                    }),
+                },
+              ]}
+            />
           </div>
 
           <label className="sr-only" htmlFor="search">

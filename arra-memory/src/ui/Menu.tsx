@@ -1,84 +1,52 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 
 /**
- * One menu instead of a row of buttons.
+ * A flat nav bar. Every destination is one click.
  *
- * The header had accumulated a button per panel, which is how a toolbar starts
- * and does not stop. Everything that is not the primary action — writing a
- * memory — lives behind one control, so the header keeps saying what the page
- * is for rather than listing what it can do.
+ * This replaced a dropdown, which was the wrong trade: hiding four items behind
+ * a menu saved a little header width and cost a click on every single use. A
+ * menu earns itself when there are too many items to show or the items are
+ * rare; neither is true here.
+ *
+ * The primary action stays visually distinct from navigation — writing a memory
+ * is what the page is for, and it should not look like a peer of "Search log".
  */
-export function Menu({
+export function NavBar({
+  primary,
   items,
 }: {
-  items: Array<{ label: string; hint?: string; danger?: boolean; onSelect: () => void }>;
+  primary: { label: string; onSelect: () => void };
+  items: Array<{ label: string; title?: string; danger?: boolean; onSelect: () => void }>;
 }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  // Close on outside click and on Escape — a menu that only closes by
-  // re-clicking its own button is a menu people fight with.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   return (
-    <div ref={box} className="relative">
+    <nav className="flex flex-wrap items-center gap-1.5" aria-label="Archive">
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          onClick={item.onSelect}
+          title={item.title}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm transition-colors hover:border-line-bright"
+          style={{ color: item.danger ? "#f0928f" : "var(--color-dim)" }}
+          onMouseEnter={(e) => {
+            if (!item.danger) e.currentTarget.style.color = "var(--color-ink)";
+          }}
+          onMouseLeave={(e) => {
+            if (!item.danger) e.currentTarget.style.color = "var(--color-dim)";
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
+
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="More"
-        className="rounded-lg border border-line px-2.5 py-1.5 text-dim transition hover:border-line-bright hover:text-ink"
+        onClick={primary.onSelect}
+        className="ml-1 rounded-lg bg-ember px-3.5 py-1.5 text-sm font-semibold text-[#17130e] transition hover:brightness-110"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="5" cy="12" r="1.7" />
-          <circle cx="12" cy="12" r="1.7" />
-          <circle cx="19" cy="12" r="1.7" />
-        </svg>
+        {primary.label}
       </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 z-40 mt-1.5 w-56 overflow-hidden rounded-xl border border-line bg-raised py-1 shadow-xl"
-        >
-          {items.map((item) => (
-            <button
-              key={item.label}
-              role="menuitem"
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                item.onSelect();
-              }}
-              className="block w-full px-3 py-2 text-left transition-colors hover:bg-panel"
-            >
-              <span
-                className="block text-sm"
-                style={{ color: item.danger ? "#f0928f" : "var(--color-ink)" }}
-              >
-                {item.label}
-              </span>
-              {item.hint && (
-                <span className="meta mt-0.5 block normal-case tracking-normal">{item.hint}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    </nav>
   );
 }
 
