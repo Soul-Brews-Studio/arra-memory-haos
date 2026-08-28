@@ -92,6 +92,10 @@ export function unauthorized(origin: string): Response {
       headers: {
         "content-type": "application/json",
         "www-authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+        // The 401 is the message that starts the whole OAuth dance, so its
+        // headers must survive a cross-origin read like any other response.
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "www-authenticate",
       },
     },
   );

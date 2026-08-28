@@ -70,6 +70,29 @@ function originOf(request: Request): string {
 
 const isSecure = (request: Request) => originOf(request).startsWith("https://");
 
+/**
+ * CORS, for browser-based MCP clients and for any discovery a web app performs
+ * from the page rather than its backend.
+ *
+ * The MCP endpoint is protected by a bearer token or OAuth on every request, so
+ * a permissive origin costs nothing here — an attacker's page still cannot read
+ * a response without a credential it does not have. What a missing preflight
+ * DOES cost is the entire connection, silently, before a single byte of MCP is
+ * exchanged.
+ *
+ * `mcp-session-id` and `mcp-protocol-version` are named explicitly: they are
+ * MCP's own headers, and a browser drops them from a cross-origin request
+ * unless they are both allowed on the way in and exposed on the way out.
+ */
+const CORS_HEADERS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-allow-headers":
+    "authorization, content-type, mcp-session-id, mcp-protocol-version, last-event-id",
+  "access-control-expose-headers": "mcp-session-id, mcp-protocol-version, www-authenticate",
+  "access-control-max-age": "86400",
+};
+
 /** 405 with the Allow header the spec expects a client to read. */
 const methodNotAllowed = () =>
   new Response(
@@ -78,16 +101,20 @@ const methodNotAllowed = () =>
       id: null,
       error: { code: -32000, message: "Method not allowed. This endpoint accepts POST only." },
     }),
-    { status: 405, headers: { "content-type": "application/json", allow: "POST" } },
+    { status: 405, headers: { "content-type": "application/json", allow: "POST", ...CORS_HEADERS } },
   );
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...CORS_HEADERS },
   });
 
 const app = new Elysia()
+
+  // Preflight for every path. Registered first so the SPA catch-all can never
+  // answer an OPTIONS with an HTML page — the same way it was answering GET /mcp.
+  .options("/*", () => new Response(null, { status: 204, headers: CORS_HEADERS }))
 
   // ── health ─────────────────────────────────────────────────────────────────
   // Deliberately public and deliberately empty of corpus data: this is what a
