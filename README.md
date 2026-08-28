@@ -177,6 +177,44 @@ the mesh client runs in a different namespace. Use the server's LAN address
 return `{"indexed":0}` against a mesh address that answered perfectly from
 elsewhere.
 
+## The search log
+
+Off by default. Turn on `search_log` and every recall is recorded — **the query
+text and which memories came back**, with timings.
+
+That default is not timidity. A search log is often more revealing than the
+corpus it searches: what someone looked for says more than what they wrote down.
+Enable it when *"what was I searching for last week"* is worth more to you than
+not keeping that record.
+
+Result **ids** are stored, result **content** is not — the memories are in the
+table next door, and copying their text would double the blast radius of a leak
+for nothing.
+
+| Tool | Does |
+|---|---|
+| `list_search_log` | Recent searches, optionally filtered by query substring |
+| `forget_search_log` | Delete one by `id`, everything `olderThanDays`, or `all` |
+
+`forget_search_log` requires **exactly one** of those three, so an ambiguous call
+cannot delete more than intended. Recording is fire-and-forget and can never
+fail a search — a log that breaks what it observes is worse than no log.
+
+## Surviving the machine — Turso embedded replica
+
+Set `turso_sync_url` and `turso_auth_token` and the add-on becomes a libSQL
+**embedded replica**: the local file stays the read path, so every query is
+still answered from disk with no network in the hot path, while libSQL
+replicates against Turso in the background.
+
+The point is survival. The Home Assistant machine can be lost entirely and the
+corpus is still in Turso. Leave both blank for a purely local database — which
+is the default, and needs no account anywhere.
+
+`turso_sync_interval` (seconds, default 60) is the trade: low enough that
+another client sees a write soon, high enough that an idle add-on is not
+chattering at the network.
+
 ## A memory
 
 | Field | Notes |

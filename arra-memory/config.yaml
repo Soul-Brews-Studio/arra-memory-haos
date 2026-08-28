@@ -1,5 +1,5 @@
 name: "Arra Memory"
-version: "0.3.4"
+version: "0.4.0"
 slug: "arra_memory"
 description: >-
   A durable memory corpus that lives in your Home Assistant sidebar and answers
@@ -73,6 +73,26 @@ options:
   # after memories are embedded means re-embedding them — the column width is
   # fixed when the database is created.
   embedding_dimensions: 1024
+  # Record every search — the query text AND which memories came back.
+  #
+  # Off by default, and that is not timidity. A search log is often more
+  # revealing than the corpus it searches: what someone looked for says more
+  # than what they wrote down. Turn it on when "what was I searching for last
+  # week" is worth more to you than not keeping that record.
+  # Manage it with the list_search_log and forget_search_log MCP tools.
+  search_log: false
+  # ── Turso embedded replica (optional) ──────────────────────────────────────
+  # Leave blank for a purely local database.
+  #
+  # Set both and the add-on keeps its local file as the READ path — every query
+  # still answered from disk, no network in the hot path — while libSQL
+  # replicates against Turso in the background. The point is survival: catlab
+  # can be lost entirely and the corpus is still in Turso.
+  turso_sync_url: ""
+  turso_auth_token: ""
+  # Seconds between syncs. Low enough that another client sees a write soon,
+  # high enough that an idle add-on is not chattering at the network.
+  turso_sync_interval: 60
 schema:
   owner_passphrase: password
   api_token: password
@@ -84,3 +104,7 @@ schema:
   ollama_url: str
   embedding_model: str
   embedding_dimensions: int
+  search_log: bool
+  turso_sync_url: str
+  turso_auth_token: password
+  turso_sync_interval: int

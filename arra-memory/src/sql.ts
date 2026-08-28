@@ -118,6 +118,33 @@ export const SCHEMA: string[] = [
      scope                 TEXT NOT NULL DEFAULT '',
      expires_at            INTEGER NOT NULL
    )`,
+  // ── the search log ─────────────────────────────────────────────────────────
+  //
+  // This stores the QUERY TEXT and the ids it returned, which is a deliberate
+  // and consequential choice. A search log that records what you looked for is
+  // as sensitive as the corpus itself — arguably more so, because intent is
+  // often sharper than content. It exists because "what was I searching for
+  // last week" is a real question; it is disable-able for the same reason.
+  //
+  // Result IDS are stored, never result CONTENT: the memories are already in
+  // the table next door, and duplicating their text here would double the
+  // blast radius of a leak for no added recall.
+  `CREATE TABLE IF NOT EXISTS search_log (
+     id           TEXT PRIMARY KEY,
+     query        TEXT NOT NULL DEFAULT '',
+     mode         TEXT NOT NULL DEFAULT 'keyword',
+     kind         TEXT NOT NULL DEFAULT '',
+     project      TEXT NOT NULL DEFAULT '',
+     tag          TEXT NOT NULL DEFAULT '',
+     result_count INTEGER NOT NULL DEFAULT 0,
+     result_ids   TEXT NOT NULL DEFAULT '[]',
+     duration_ms  INTEGER NOT NULL DEFAULT 0,
+     source       TEXT NOT NULL DEFAULT '',
+     created_at   TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS search_log_created_idx
+     ON search_log(created_at DESC)`,
+
   `CREATE TABLE IF NOT EXISTS oauth_tokens (
      token      TEXT PRIMARY KEY,
      client_id  TEXT NOT NULL,
@@ -364,6 +391,45 @@ export const OAUTH = {
     sweep: `DELETE FROM oauth_tokens
              WHERE expires_at IS NOT NULL AND expires_at <= ?`,
   },
+} as const;
+
+// ── the search log ────────────────────────────────────────────────────────────
+
+export const SEARCH_LOG = {
+  // args: id, query, mode, kind, project, tag, count, idsJson, ms, source, now
+  record: `INSERT INTO search_log
+             (id, query, mode, kind, project, tag,
+              result_count, result_ids, duration_ms, source, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+
+  // args: limit
+  list: `SELECT id, query, mode, kind, project, tag,
+                result_count, result_ids, duration_ms, source, created_at
+           FROM search_log
+          ORDER BY created_at DESC
+          LIMIT ?`,
+
+  // Substring match over the recorded queries. args: pattern, limit
+  find: `SELECT id, query, mode, kind, project, tag,
+                result_count, result_ids, duration_ms, source, created_at
+           FROM search_log
+          WHERE lower(query) LIKE ?
+          ORDER BY created_at DESC
+          LIMIT ?`,
+
+  //                                          args: id
+  deleteOne: `DELETE FROM search_log WHERE id = ?`,
+
+  /** Everything. Used only when the caller explicitly confirms. */
+  deleteAll: `DELETE FROM search_log`,
+
+  // Older than an ISO cutoff the caller computes. args: cutoffIso
+  deleteBefore: `DELETE FROM search_log WHERE created_at < ?`,
+
+  stats: `SELECT COUNT(*) AS total,
+                 MIN(created_at) AS oldest,
+                 MAX(created_at) AS newest
+            FROM search_log`,
 } as const;
 
 // ── semantic search ───────────────────────────────────────────────────────────

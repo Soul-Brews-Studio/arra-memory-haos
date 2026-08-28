@@ -19,9 +19,30 @@ export function db(): Client {
     // /data is the only directory Home Assistant persists across add-on
     // restarts AND includes in its backups. Anywhere else is scratch space
     // that quietly vanishes on the next update.
-    client = createClient({
-      url: process.env.DATABASE_URL ?? "file:/data/arra-memory.db",
-    });
+    const url = process.env.DATABASE_URL ?? "file:/data/arra-memory.db";
+    const syncUrl = process.env.TURSO_SYNC_URL?.trim();
+    const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
+
+    if (syncUrl && authToken) {
+      // Embedded replica. The local file stays the read path — every query is
+      // answered from disk at local speed, with no network in the hot path —
+      // while libSQL replicates against Turso in the background. Writes go to
+      // the primary and come back on the next sync.
+      //
+      // This is what makes the corpus survive the machine: catlab can be lost
+      // entirely and the memories are still in Turso.
+      client = createClient({
+        url,
+        syncUrl,
+        authToken,
+        // Seconds. Low enough that a second client sees a write soon, high
+        // enough that an idle add-on is not chattering at the network.
+        syncInterval: Number(process.env.TURSO_SYNC_INTERVAL) || 60,
+      });
+      console.log(`[arra-memory] embedded replica: ${url} ⇄ ${syncUrl}`);
+    } else {
+      client = createClient({ url });
+    }
   }
   return client;
 }

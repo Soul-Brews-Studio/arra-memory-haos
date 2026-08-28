@@ -12,6 +12,14 @@ import {
   updateMemory,
   type Memory,
 } from "./memory";
+import {
+  clearSearchLog,
+  deleteSearchLogEntry,
+  listSearchLog,
+  pruneSearchLog,
+  recordSearch,
+  searchLogStats,
+} from "./searchlog";
 import { RELATIVE_RANGES, resolveRange } from "./timerange";
 import { MEMORY_KINDS, slugify, type MemoryKind } from "./utils";
 
@@ -236,6 +244,36 @@ const BASE_TOOLS = [
     },
   },
   {
+    name: "list_search_log",
+    description:
+      "List recent searches with the query text, what was returned, and when. Only populated when the search log is enabled in the add-on configuration.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "integer", minimum: 1, maximum: 200 },
+        query: { type: "string", description: "Only entries whose query contains this." },
+      },
+    },
+  },
+  {
+    name: "forget_search_log",
+    description:
+      "Delete search log entries: one by id, everything older than N days, or all of it. Exactly one of id/olderThanDays/all must be given.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Delete exactly this entry." },
+        olderThanDays: {
+          type: "integer",
+          minimum: 0,
+          description: "Delete entries older than this many days, e.g. 30.",
+        },
+        all: { type: "boolean", description: "Delete every entry. Irreversible." },
+      },
+    },
+    annotations: { destructiveHint: true, idempotentHint: false },
+  },
+  {
     // The escape hatch behind the generated time tools: any window at all,
     // including ones older than the months offered as their own tools.
     name: "search_memories_between",
@@ -448,6 +486,53 @@ async function callTool(name: string, args: Record<string, any>) {
       return { ...text(body), structuredContent: { tags } };
     }
 
+    case "list_search_log": {
+      const entries = await listSearchLog(args.limit ?? 50, args.query);
+      const stats = await searchLogStats();
+      if (!stats.enabled) {
+        return {
+          ...text(
+            "The search log is switched off. Enable `search_log` in this add-on's configuration to start recording queries.",
+          ),
+          structuredContent: { enabled: false, entries: [] },
+        };
+      }
+      const body = entries.length
+        ? entries
+            .map(
+              (e) =>
+                `${e.createdAt}  “${e.query || "(empty)"}”  → ${e.resultCount} result(s), ${e.durationMs}ms${e.mode !== "keyword" ? `, ${e.mode}` : ""}`,
+            )
+            .join("\n")
+        : "No searches recorded yet.";
+      return { ...text(body), structuredContent: { enabled: true, stats, entries } };
+    }
+
+    case "forget_search_log": {
+      // Exactly one mode, so an ambiguous call cannot delete more than intended.
+      const modes = [args.id, args.olderThanDays, args.all].filter(
+        (v) => v !== undefined && v !== null && v !== false,
+      );
+      if (modes.length !== 1) {
+        return toolError("Give exactly one of: id, olderThanDays, or all.");
+      }
+      if (args.id) {
+        const ok2 = await deleteSearchLogEntry(String(args.id));
+        return ok2
+          ? { ...text(`Deleted search log entry ${args.id}.`), structuredContent: { deleted: 1 } }
+          : toolError(`No search log entry with id ${args.id}.`);
+      }
+      if (args.all === true) {
+        const removed = await clearSearchLog();
+        return { ...text(`Cleared the whole search log (${removed} entries).`), structuredContent: { deleted: removed } };
+      }
+      const { removed, cutoff } = await pruneSearchLog(Number(args.olderThanDays));
+      return {
+        ...text(`Pruned ${removed} search log entries older than ${args.olderThanDays} days (before ${cutoff}).`),
+        structuredContent: { deleted: removed, cutoff },
+      };
+    }
+
     case "search_memories_between": {
       // Dates arrive as whatever the model produced. Normalising through Date
       // means "2026-01-01" and a full timestamp both work, and an unparseable
@@ -498,12 +583,26 @@ async function callTool(name: string, args: Record<string, any>) {
 }
 
 async function recall(args: Record<string, any>) {
+  const started = Date.now();
   const memories = await searchMemories({
     query: args.query,
     kind: args.kind as MemoryKind | undefined,
     project: args.project,
     tag: args.tag,
     limit: args.limit ?? 10,
+  });
+
+  // Fire-and-forget: the results are already computed and the caller is
+  // waiting. See searchlog.ts for why this can never throw.
+  void recordSearch({
+    query: args.query,
+    mode: "keyword",
+    kind: args.kind,
+    project: args.project,
+    tag: args.tag,
+    resultIds: memories.map((m) => m.id),
+    durationMs: Date.now() - started,
+    source: "mcp",
   });
 
   const scope = [
