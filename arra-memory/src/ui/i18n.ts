@@ -36,7 +36,7 @@ export const LANGS: Lang[] = ["th", "en"];
  */
 const STRINGS = {
   // ── nav
-  "nav.archive": { th: "คลัง", en: "Archive" },
+  "nav.archive": { th: "ความจำ", en: "Memory" },
   "nav.searchLog": { th: "ประวัติค้นหา", en: "Search log" },
   "nav.settings": { th: "ตั้งค่า", en: "Settings" },
   "nav.lock": { th: "ล็อก", en: "Lock" },
@@ -63,6 +63,10 @@ const STRINGS = {
   "atlas.explained": { th: "\u0e2d\u0e18\u0e34\u0e1a\u0e32\u0e22\u0e44\u0e14\u0e49", en: "explains" },
   "atlas.density": { th: "\u0e04\u0e27\u0e32\u0e21\u0e2b\u0e19\u0e32\u0e41\u0e19\u0e48\u0e19", en: "density" },
   "atlas.unembedded": { th: "\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35\u0e40\u0e27\u0e01\u0e40\u0e15\u0e2d\u0e23\u0e4c", en: "without a vector" },
+  "atlas.loading": { th: "\u0e01\u0e33\u0e25\u0e31\u0e07\u0e40\u0e1b\u0e34\u0e14\u2026", en: "opening\u2026" },
+  "atlas.loadFailed": { th: "\u0e40\u0e1b\u0e34\u0e14\u0e04\u0e27\u0e32\u0e21\u0e08\u0e33\u0e19\u0e35\u0e49\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49", en: "Could not open that memory." },
+  "atlas.close": { th: "\u0e1b\u0e34\u0e14", en: "Close" },
+  "atlas.openInArchive": { th: "\u0e40\u0e1b\u0e34\u0e14\u0e43\u0e19\u0e04\u0e25\u0e31\u0e07", en: "Open in the archive" },
   "atlas.empty": {
     th: "\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35\u0e04\u0e27\u0e32\u0e21\u0e08\u0e33\u0e17\u0e35\u0e48\u0e21\u0e35 embedding \u2014 \u0e40\u0e1b\u0e34\u0e14 semantic search \u0e01\u0e48\u0e2d\u0e19",
     en: "No memories carry a vector yet — semantic search has to be on for the atlas to have anything to draw.",
@@ -74,7 +78,7 @@ const STRINGS = {
 
   // ── archive
   "archive.eyebrow": { th: "ARRA MEMORY", en: "ARRA MEMORY" },
-  "archive.title": { th: "คลังความจำ", en: "The archive" },
+  "archive.title": { th: "ความจำ", en: "Memory" },
   "archive.search": { th: "ค้นหาในหัวข้อ เนื้อหา และแท็ก…", en: "Search titles, content, tags…" },
   "archive.searchLabel": { th: "ค้นหาความจำ", en: "Search memories" },
   "archive.searching": { th: "กำลังค้น…", en: "searching…" },
@@ -92,7 +96,7 @@ const STRINGS = {
 
   // ── empty states
   "empty.nothing": { th: "ไม่มีอะไรตรงกับที่กรอง", en: "Nothing matches that." },
-  "empty.archive": { th: "คลังยังว่างอยู่", en: "The archive is empty." },
+  "empty.archive": { th: "ยังไม่มีความจำ", en: "No memories yet." },
   "empty.filteredHint": {
     th: "การค้นหาเป็นการจับคู่ตัวอักษรตรง ๆ ในหัวข้อ เนื้อหา และแท็ก — ลองคำที่รู้ว่ามีอยู่",
     en: "Recall is literal keyword matching across titles, content and tags — try a word you know is in there.",
@@ -102,7 +106,7 @@ const STRINGS = {
     en: "Memories written here or by Claude over MCP will appear in this list.",
   },
   "empty.writeFirst": { th: "เขียนอันแรกเลย", en: "Write the first one" },
-  "empty.searchAll": { th: "ค้นทั้งคลังแทน", en: "Search the whole corpus instead" },
+  "empty.searchAll": { th: "ค้นความจำทั้งหมดแทน", en: "Search every memory instead" },
 
   // ── compose
   "compose.title": { th: "เขียนความจำ", en: "Write a memory" },
@@ -121,7 +125,7 @@ const STRINGS = {
   "compose.saveFailed": { th: "บันทึกไม่สำเร็จ", en: "Could not save." },
 
   // ── lock screen
-  "lock.title": { th: "คลังถูกล็อกอยู่", en: "The archive is locked" },
+  "lock.title": { th: "ความจำถูกล็อกอยู่", en: "Memory is locked" },
   "lock.hint": {
     th: "ใส่ owner passphrase ที่ตั้งไว้ใน config ของ add-on นี้",
     en: "Enter the owner passphrase set in this add-on's configuration.",
@@ -130,7 +134,7 @@ const STRINGS = {
   "lock.submit": { th: "ปลดล็อก", en: "Unlock" },
   "lock.opening": { th: "กำลังเปิด…", en: "Opening…" },
   "lock.wrong": { th: "passphrase ไม่ตรง", en: "That passphrase does not match." },
-  "lock.splash": { th: "กำลังเปิดคลัง…", en: "opening the archive…" },
+  "lock.splash": { th: "กำลังเปิด…", en: "opening…" },
 
   // ── errors
   "error.load": { th: "โหลดความจำไม่ได้", en: "Could not load memories." },

@@ -242,6 +242,21 @@ export const MEMORIES = {
   //                                          args: id
   byId: `SELECT ${MEMORY_COLUMNS} FROM memories WHERE id = ?`,
 
+  /**
+   * Look a memory up by its id, or the front of it.
+   *
+   * Search matches title, content and tags — deliberately, those are what
+   * someone types. It does NOT match the id, and that gap had a real cost: the
+   * atlas's "open in Memory" navigated to `?q=<uuid>` and found nothing, because
+   * a UUID is not in any of the three fields being searched. An id is a
+   * perfectly reasonable thing to paste; it just needed its own path.
+   * args: pattern, limit
+   */
+  byIdPrefix: `SELECT ${MEMORY_COLUMNS} FROM memories
+                WHERE id LIKE ?
+                ORDER BY updated_at DESC
+                LIMIT ?`,
+
   // Honest keyword search — substring matching over title, content and tags,
   // ranked by how well the hit matches rather than by relevance magic. An
   // empty query returns the recent-and-important slice instead of nothing.
@@ -267,8 +282,8 @@ export const MEMORIES = {
                 JOIN memories m ON m.rowid = f.rowid
                WHERE memories_fts MATCH ?${scopeFilter("m.")}
                ORDER BY bm25(memories_fts, 3.0, 1.0, 2.0),
-                        m.importance DESC,
-                        m.updated_at DESC
+                        m.updated_at DESC,
+                        m.importance DESC
                LIMIT ?`,
 
   /** Rebuilds the FTS index from the corpus. Used after a schema upgrade. */
@@ -289,8 +304,14 @@ export const MEMORIES = {
                 WHEN ? <> '' AND lower(tags)  LIKE ?     THEN 2
                 ELSE 3
               END,
-              importance DESC,
-              updated_at DESC
+              -- Newest first. Importance used to lead here, which meant the
+              -- archive opened on whatever had been marked important rather
+              -- than on what just happened — and "what did I write today" is
+              -- the question a memory list is actually opened with. Importance
+              -- still breaks ties, and for a real query the relevance CASE
+              -- above still outranks both.
+              updated_at DESC,
+              importance DESC
             LIMIT ?`,
 
   /**

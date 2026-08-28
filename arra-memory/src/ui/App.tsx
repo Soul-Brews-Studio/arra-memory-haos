@@ -48,10 +48,10 @@ export default function App() {
    * "Trigram" from the search log navigated to a query the route was already
    * holding, so the load effect never refired, no search ran, and nothing was
    * recorded. A filter that survives leaving the thing it filters is not state,
-   * it is a leak. Back still returns to the filtered archive.
+   * it is a leak. Back still returns to the filtered list.
    */
   const setView = (next: View) =>
-    navigate(next === "archive" ? { ...route, view: next } : { ...EMPTY_ROUTE, view: next });
+    navigate(next === "memory" ? { ...route, view: next } : { ...EMPTY_ROUTE, view: next });
   const setQuery = (next: string) => navigate({ ...route, query: next });
   const setFilters = (next: { scope: Scope; tags: string[] }) =>
     navigate({ ...route, ...next.scope, tag: next.tags });
@@ -140,8 +140,8 @@ export default function App() {
         {
           label: t("nav.archive"),
           weight: 10,
-          active: view === "archive",
-          onSelect: () => setView("archive"),
+          active: view === "memory",
+          onSelect: () => setView("memory"),
         },
         // Workspaces is deliberately NOT a nav destination.
         //
@@ -198,19 +198,19 @@ export default function App() {
   const body =
     view === "atlas" ? (
       <Atlas
-        onClose={() => setView("archive")}
+        onClose={() => setView("memory")}
         nav={nav}
         // The drawing shows what the archive is showing — the chips filter both.
         scope={scope}
         onOpenMemory={(id) => {
           // Clicking a point searches for that memory's id, which is the one
           // query guaranteed to return exactly it and nothing else.
-          navigate({ ...EMPTY_ROUTE, view: "archive", query: id });
+          navigate({ ...EMPTY_ROUTE, view: "memory", query: id });
         }}
       />
     ) : view === "workspaces" ? (
       <Workspaces
-        onClose={() => setView("archive")}
+        onClose={() => setView("memory")}
         nav={nav}
         // Picking a workspace, project, or agent here IS the navigation: it
         // scopes the archive and takes you there, rather than showing a second
@@ -220,7 +220,7 @@ export default function App() {
           // one-element selection.
           navigate({
             ...EMPTY_ROUTE,
-            view: "archive",
+            view: "memory",
             workspace: next.workspace ? [next.workspace] : [],
             project: next.project ? [next.project] : [],
             createdBy: next.createdBy ? [next.createdBy] : [],
@@ -228,10 +228,10 @@ export default function App() {
         }}
       />
     ) : view === "settings" ? (
-      <Tools onClose={() => setView("archive")} nav={nav} />
+      <Tools onClose={() => setView("memory")} nav={nav} />
     ) : view === "log" ? (
       <SearchLog
-        onClose={() => setView("archive")}
+        onClose={() => setView("memory")}
         nav={nav}
         // Replaying puts you in the archive with the logged query AND its scope
         // restored, which runs a real search through the same path everything
@@ -243,7 +243,7 @@ export default function App() {
           // they all derive `next` from the same stale route.
           navigate({
             ...EMPTY_ROUTE,
-            view: "archive",
+            view: "memory",
             query: entry.query,
             kind: entry.kind ? [entry.kind] : [],
             workspace: entry.workspace ? [entry.workspace] : [],
@@ -269,7 +269,7 @@ export default function App() {
         // Following a [[reference]] searches for its title — the same resolution
         // the graph's link edges use, so clicking a link in the text and
         // clicking the matching edge in the atlas land in the same place.
-        onFollow={(title) => navigate({ ...EMPTY_ROUTE, view: "archive", query: title })}
+        onFollow={(title) => navigate({ ...EMPTY_ROUTE, view: "memory", query: title })}
         onForget={async (id) => {
           // Optimistic: the row disappears immediately, and a failure puts it
           // back rather than leaving the UI lying.

@@ -22,9 +22,9 @@ import { useEffect, useState } from "react";
  * link — is not a cost for an app that is a single bundle behind a passphrase.
  */
 
-export type View = "archive" | "atlas" | "workspaces" | "settings" | "log";
+export type View = "memory" | "atlas" | "workspaces" | "settings" | "log";
 
-const VIEWS: View[] = ["archive", "atlas", "workspaces", "settings", "log"];
+const VIEWS: View[] = ["memory", "atlas", "workspaces", "settings", "log"];
 
 /**
  * Renamed destinations, old name → new.
@@ -33,7 +33,13 @@ const VIEWS: View[] = ["archive", "atlas", "workspaces", "settings", "log"];
  * the tool surface moved under Settings. Silently landing them on the archive
  * would look like the page had been deleted, so the old name keeps working.
  */
-const ALIASES: Record<string, View> = { tools: "settings" };
+const ALIASES: Record<string, View> = {
+  tools: "settings",
+  // `#/archive` was the home view's URL for five versions and is the one most
+  // likely to have been bookmarked. Renaming a page must not break the link
+  // someone kept to it.
+  archive: "memory",
+};
 
 export interface Route {
   view: View;
@@ -52,7 +58,7 @@ export interface Route {
 }
 
 export const EMPTY_ROUTE: Route = {
-  view: "archive",
+  view: "memory",
   query: "",
   kind: [],
   workspace: [],
@@ -70,7 +76,7 @@ export function parseRoute(hash: string): Route {
   const params = new URLSearchParams(search ?? "");
   const view = VIEWS.includes(path as View)
     ? (path as View)
-    : (ALIASES[path ?? ""] ?? "archive");
+    : (ALIASES[path ?? ""] ?? "memory");
 
   return {
     view,

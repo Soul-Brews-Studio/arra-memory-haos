@@ -300,6 +300,26 @@ export async function searchMemoriesNoLog(
 
   const query = (input.query ?? "").trim().slice(0, 240);
 
+  // An id, or the front of one, is answered directly.
+  //
+  // Checked BEFORE the text paths because neither can succeed: the FTS index
+  // covers title, content and tags, and so does the LIKE fallback — an id is in
+  // none of them. Without this, pasting an id returns "nothing matches", which
+  // is how the atlas's own "open in Memory" button led to an empty list.
+  //
+  // Eight characters is the threshold: that is the short form shown throughout
+  // the UI, and it is long enough that a real word will not collide with it.
+  if (/^[0-9a-f]{8}[0-9a-f-]*$/i.test(query)) {
+    const byId = await db().execute({
+      sql: MEMORIES.byIdPrefix,
+      args: [`${query}%`, clampLimit(input.limit)],
+    });
+    const found = rows<MemoryRow>(byId).map(toMemory);
+    if (found.length) return found;
+    // No match falls through rather than returning empty: a hex-looking string
+    // might genuinely be text someone wrote.
+  }
+
   // Take the indexed path when the query is long enough for trigram AND no tag
   // filter is involved — tag matching is a JSON-substring test the FTS table
   // cannot express, so those queries stay on the LIKE path below.

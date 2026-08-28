@@ -110,6 +110,9 @@ export const api = {
         body: JSON.stringify(input),
       }),
 
+    /** One memory, by id — what the atlas opens when you click a soma. */
+    get: (id: string) => call<{ memory: Memory }>(`/api/memories/${encodeURIComponent(id)}`),
+
     update: (id: string, input: Partial<Memory>) =>
       call<{ memory: Memory }>(`/api/memories/${id}`, {
         method: "PATCH",
