@@ -53,6 +53,7 @@ import { buildDigest, digestWindows } from "./digest";
 import { buildGraph } from "./graph";
 import { ensureSchema, replicaStatus } from "./db";
 import { VERSION } from "./version";
+import { INSTANCE_NAME } from "./identity";
 
 const PORT = Number(process.env.PORT ?? 8099);
 const PUBLIC_DIR = process.env.PUBLIC_DIR ?? `${import.meta.dir}/../public`;
@@ -205,7 +206,10 @@ const app = new Elysia()
   // an answer that omits the version sends you to the Supervisor UI to find out.
   .get("/api/health", () => ({
     status: "ok",
+    // `service` stays the invariant product id — scripts match on it. `name` is
+    // this instance's own identity, for chrome and connectors.
     service: "arra-memory",
+    name: INSTANCE_NAME,
     version: VERSION,
     // The add-on owner's defaults for language and palette. On /api/health
     // because the UI fetches that before unlocking — the lock screen itself

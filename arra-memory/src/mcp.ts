@@ -15,6 +15,7 @@ import {
   type Memory,
 } from "./memory";
 import { VERSION } from "./version";
+import { INSTANCE_NAME } from "./identity";
 import { buildDigest, digestWindows } from "./digest";
 import {
   clearSearchLog,
@@ -948,7 +949,7 @@ export async function handleMcp(request: JsonRpcRequest): Promise<unknown | null
         // The real build number, not a hand-maintained constant. A client that
         // reports what it connected to should not report a version that stopped
         // being true eight releases ago.
-        serverInfo: { name: "Arra Memory", version: VERSION },
+        serverInfo: { name: INSTANCE_NAME, version: VERSION },
       });
 
     // Notifications carry no id and MUST NOT be answered — returning a response

@@ -12,6 +12,7 @@ set -eu
 OWNER_PASSPHRASE="$(bashio::config 'owner_passphrase')"
 API_TOKEN="$(bashio::config 'api_token')"
 PUBLIC_URL="$(bashio::config 'public_url')"
+INSTANCE_NAME="$(bashio::config 'instance_name')"
 OLLAMA_URL="$(bashio::config 'ollama_url')"
 EMBEDDING_MODEL="$(bashio::config 'embedding_model')"
 EMBEDDING_DIMENSIONS="$(bashio::config 'embedding_dimensions')"
@@ -27,6 +28,7 @@ TURSO_SYNC_INTERVAL="$(bashio::config 'turso_sync_interval')"
 [ "${OWNER_PASSPHRASE}" = "null" ] && OWNER_PASSPHRASE=""
 [ "${API_TOKEN}" = "null" ] && API_TOKEN=""
 [ "${PUBLIC_URL}" = "null" ] && PUBLIC_URL=""
+[ "${INSTANCE_NAME}" = "null" ] && INSTANCE_NAME=""
 [ "${OLLAMA_URL}" = "null" ] && OLLAMA_URL=""
 [ "${EMBEDDING_MODEL}" = "null" ] && EMBEDDING_MODEL="bge-m3"
 [ "${EMBEDDING_DIMENSIONS}" = "null" ] && EMBEDDING_DIMENSIONS="1024"
@@ -50,6 +52,7 @@ export DATABASE_URL="file:/data/arra-memory.db"
 export OWNER_PASSPHRASE
 export API_TOKEN
 export PUBLIC_URL
+export INSTANCE_NAME
 export OLLAMA_URL
 export EMBEDDING_MODEL
 export EMBEDDING_DIMENSIONS

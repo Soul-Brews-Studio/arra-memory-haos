@@ -142,6 +142,8 @@ export interface EmbeddingCoverage {
 export interface Health {
   status: string;
   service: string;
+  /** This instance's own name — "Arra Memory" unless the owner set instance_name. */
+  name?: string;
   version: string;
   /** What the add-on's own configuration says a first visit should look like. */
   defaults?: { language: string; theme: string };

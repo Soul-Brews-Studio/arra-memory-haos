@@ -1,5 +1,5 @@
 name: "Arra Memory"
-version: "0.20.0"
+version: "0.21.0"
 slug: "arra_memory"
 description: >-
   A durable memory corpus that lives in your Home Assistant sidebar and answers
@@ -73,6 +73,10 @@ options:
   # OAuth URLs. Blank = derive every URL from the incoming request, which is
   # correct for LAN and ingress use.
   public_url: ""
+  # What this instance calls itself — the MCP serverInfo name claude.ai displays,
+  # the UI chrome title, and the health `name`. Empty means "Arra Memory". Data
+  # is never renamed by this; it is identity, not schema.
+  instance_name: ""
   # Semantic search, off unless you point it at an Ollama server. It does NOT
   # have to be on this machine — a box on your LAN or private mesh is better,
   # since a HAOS host rarely has room for a model. Blank = keyword search only.
@@ -119,6 +123,7 @@ schema:
   # the add-on never starts and its log is EMPTY — the only trace is one line
   # in the supervisor log. Learned the hard way, 2026-08-27.
   public_url: str
+  instance_name: str
   ollama_url: str
   embedding_model: str
   embedding_dimensions: int

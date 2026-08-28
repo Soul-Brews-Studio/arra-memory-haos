@@ -8,7 +8,7 @@ import { Tools } from "./Tools";
 import { Workspaces } from "./Workspaces";
 import { NavBar, Panel } from "./Menu";
 import { EMPTY_ROUTE, useRoute, type View } from "./route";
-import { applyServerDefaultLang, t, useLang } from "./i18n";
+import { applyServerDefaultLang, instanceName, setInstanceName, t, useLang } from "./i18n";
 import { applyServerDefaultTheme, THEMES, useTheme } from "./theme";
 import {
   EMPTY_SCOPE,
@@ -80,6 +80,12 @@ export default function App() {
         // has already picked a language sees no flicker because nothing changes.
         applyServerDefaultLang(h.defaults?.language);
         applyServerDefaultTheme(h.defaults?.theme);
+        // The instance's own name, into the chrome that renders before/without
+        // prop access: the browser tab, and the archive eyebrow via i18n.
+        if (h.name) {
+          document.title = h.name;
+          setInstanceName(h.name);
+        }
       })
       .catch(() => {});
   }, []);
@@ -401,7 +407,7 @@ function Archive({
 
   return (
     <Panel
-      eyebrow={t("archive.eyebrow")}
+      eyebrow={instanceName().toUpperCase()}
       title={t("archive.title")}
       nav={nav}
       // Archive is the home view, so there is nowhere to close to — Escape and
@@ -502,7 +508,7 @@ function Footer({ health }: { health: Health | null }) {
   return (
     <footer className="mx-auto max-w-4xl px-5 pb-8">
       <p className="meta border-t border-line pt-3">
-        Arra Memory v{health.version}
+        {health.name ?? "Arra Memory"} v{health.version}
         {health.features.semantic && ` · semantic (${health.features.embeddingModel})`}
         {health.features.replica && " · replicated"}
         {health.features.searchLog && " · logging searches"}
@@ -554,7 +560,7 @@ function Lock({ onOpen }: { onOpen: () => void }) {
         className="w-full max-w-sm rounded-2xl border border-line bg-panel p-8"
       >
         <p className="eyebrow mb-4" style={{ color: "var(--color-ember)" }}>
-          Arra Memory
+          {instanceName()}
         </p>
         <h1 className="mb-2 text-xl font-semibold tracking-tight">{t("lock.title")}</h1>
         <p className="mb-6 text-sm text-dim">{t("lock.hint")}</p>

@@ -173,6 +173,22 @@ const STRINGS = {
 
 export type StringKey = keyof typeof STRINGS;
 
+/**
+ * The instance's display name, set once from /api/health.
+ *
+ * A module-level value rather than a prop because the chrome that shows it
+ * (lock screen eyebrow, archive eyebrow, tab title) renders at three different
+ * depths — and rather than a STRINGS mutation because the table is readonly by
+ * construction. Consumers re-render anyway when App's health state lands.
+ */
+let INSTANCE = "Arra Memory";
+export function setInstanceName(name: string): void {
+  INSTANCE = name;
+}
+export function instanceName(): string {
+  return INSTANCE;
+}
+
 const STORAGE_KEY = "arra-memory-lang";
 
 /**
