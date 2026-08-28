@@ -51,6 +51,7 @@ import { MEMORY_KINDS, slugify, type MemoryKind } from "./utils";
  */
 const SUPPORTED_PROTOCOL_VERSIONS = [
   "2026-07-28",
+  "2025-11-25", // what claude.ai actually speaks — measured, not guessed
   "2025-06-18",
   "2025-03-26",
   "2024-11-05",
@@ -58,12 +59,22 @@ const SUPPORTED_PROTOCOL_VERSIONS = [
 
 const PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
 
-/** Echo the client's version when we speak it; otherwise offer our own. */
+/**
+ * Echo the client's version when we can speak it; otherwise offer our own.
+ *
+ * The list above is explicit, but any well-formed YYYY-MM-DD revision is also
+ * accepted. That is not laxness — this server implements three methods over
+ * plain JSON-RPC (initialize, tools/list, tools/call) and none of them has
+ * changed shape across any published revision. Refusing a version we would in
+ * fact serve correctly costs the entire connection and says nothing useful.
+ *
+ * The list is still worth keeping: it documents what has actually been tested,
+ * and it is what a reader checks first when a new client will not connect.
+ */
 function negotiateProtocol(requested: unknown): string {
-  return typeof requested === "string" &&
-    (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
-    ? requested
-    : PREFERRED_PROTOCOL_VERSION;
+  if (typeof requested !== "string") return PREFERRED_PROTOCOL_VERSION;
+  if ((SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)) return requested;
+  return /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : PREFERRED_PROTOCOL_VERSION;
 }
 
 /** How many projects may become their own tool. Beyond this, use the filter. */
