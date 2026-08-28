@@ -41,3 +41,55 @@ export const KIND_COLOR: Record<MemoryKind, string> = {
   person: "var(--color-kind-person)",
   project: "var(--color-kind-project)",
 };
+
+export interface SearchLogEntry {
+  id: string;
+  query: string;
+  mode: string;
+  kind: string;
+  project: string;
+  tag: string;
+  resultCount: number;
+  resultIds: string[];
+  durationMs: number;
+  source: string;
+  createdAt: string;
+}
+
+export interface SearchLogStats {
+  enabled: boolean;
+  total: number;
+  oldest: string | null;
+  newest: string | null;
+}
+
+export interface EmbeddingCoverage {
+  total: number;
+  embedded: number;
+  model: string | null;
+  enabled: boolean;
+}
+
+/** /api/health — public, and the fastest way to see which build is running. */
+export interface Health {
+  status: string;
+  service: string;
+  version: string;
+  features: {
+    semantic: boolean;
+    embeddingModel: string | null;
+    searchLog: boolean;
+    replica: boolean;
+    apiToken: boolean;
+  };
+}
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  /** Produced from the corpus (a project or a time window), not from source. */
+  generated: boolean;
+  project: string | null;
+  destructive: boolean;
+  disabled: boolean;
+}

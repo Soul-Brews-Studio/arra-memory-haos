@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "./api";
 import { KindFilter, MemoryCard, useSlashFocus } from "./components";
-import { MEMORY_KINDS, type Memory, type MemoryKind, type MemoryStats } from "./types";
+import { SearchLog } from "./SearchLog";
+import { Tools } from "./Tools";
+import { MEMORY_KINDS, type Health, type Memory, type MemoryKind, type MemoryStats } from "./types";
 
 type Phase = "checking" | "locked" | "ready";
 
@@ -14,8 +16,17 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
+  const [showLog, setShowLog] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+  const [health, setHealth] = useState<Health | null>(null);
 
   const searchRef = useSlashFocus();
+
+  // Public endpoint, so this runs before unlocking — the footer can state the
+  // build and what is switched on even at the lock screen.
+  useEffect(() => {
+    api.health().then(setHealth).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api.session
@@ -78,6 +89,24 @@ export default function App() {
               >
                 Remember
               </button>
+              <button
+                type="button"
+                onClick={() => setShowTools(true)}
+                className="rounded-lg border border-line px-3 py-1.5 font-mono text-xs text-dim transition hover:border-line-bright hover:text-ink"
+                title="Which MCP tools this connector offers"
+              >
+                tools
+              </button>
+              {health?.features.searchLog && (
+                <button
+                  type="button"
+                  onClick={() => setShowLog(true)}
+                  className="rounded-lg border border-line px-3 py-1.5 font-mono text-xs text-dim transition hover:border-line-bright hover:text-ink"
+                  title="What has been searched for"
+                >
+                  log
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() =>
@@ -167,6 +196,10 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {showTools && <Tools onClose={() => setShowTools(false)} />}
+
+      {showLog && <SearchLog onClose={() => setShowLog(false)} />}
 
       {composing && (
         <Compose

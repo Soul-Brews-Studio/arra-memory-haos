@@ -1,4 +1,13 @@
-import type { Memory, MemoryKind, MemoryStats } from "./types";
+import type {
+  EmbeddingCoverage,
+  Health,
+  Memory,
+  MemoryKind,
+  MemoryStats,
+  SearchLogEntry,
+  SearchLogStats,
+  ToolInfo,
+} from "./types";
 
 /**
  * The browser's view of the API.
@@ -88,5 +97,38 @@ export const api = {
       }),
   },
 
-  stats: () => call<{ stats: MemoryStats }>("/api/stats"),
+  stats: () => call<{ stats: MemoryStats; embeddings: EmbeddingCoverage }>("/api/stats"),
+
+  health: () => call<Health>("/api/health"),
+
+  tools: {
+    list: () => call<{ tools: ToolInfo[]; locked: string[] }>("/api/tools"),
+    setDisabled: (name: string, disabled: boolean) =>
+      call<{ name: string; disabled: boolean }>(`/api/tools/${encodeURIComponent(name)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ disabled }),
+      }),
+    enableAll: () => call<{ ok: true }>("/api/tools/enable-all", { method: "POST" }),
+  },
+
+  searchLog: {
+    list: (params: { limit?: number; q?: string } = {}) => {
+      const s = new URLSearchParams();
+      if (params.limit) s.set("limit", String(params.limit));
+      if (params.q) s.set("q", params.q);
+      const qs = s.toString();
+      return call<{ entries: SearchLogEntry[]; stats: SearchLogStats }>(
+        `/api/search-log${qs ? `?${qs}` : ""}`,
+      );
+    },
+    remove: (id: string) =>
+      call<{ id: string; deleted: boolean }>(`/api/search-log/${id}`, { method: "DELETE" }),
+    prune: (olderThanDays: number) =>
+      call<{ deleted: number; cutoff: string }>(
+        `/api/search-log?olderThanDays=${olderThanDays}`,
+        { method: "DELETE" },
+      ),
+    clear: () =>
+      call<{ deleted: number }>("/api/search-log?all=true", { method: "DELETE" }),
+  },
 };

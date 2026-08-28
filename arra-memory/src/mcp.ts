@@ -20,6 +20,7 @@ import {
   recordSearch,
   searchLogStats,
 } from "./searchlog";
+import { disabledTools } from "./tools";
 import { RELATIVE_RANGES, resolveRange } from "./timerange";
 import { MEMORY_KINDS, slugify, type MemoryKind } from "./utils";
 
@@ -375,7 +376,29 @@ async function buildToolList() {
     });
   }
 
-  return { tools: [...BASE_TOOLS, ...generated], generated };
+  const all = [...BASE_TOOLS, ...generated];
+  const off = await disabledTools();
+
+  return {
+    // What a client sees: everything the owner has not switched off.
+    tools: all.filter((t: any) => !off.has(t.name)),
+    generated,
+    // What the UI sees: every tool that COULD exist, with its state, so a
+    // disabled tool is still listed and can be switched back on.
+    catalog: all.map((t: any) => ({
+      name: t.name,
+      description: t.description,
+      generated: Boolean(t._project) || (t.name.startsWith(TIME_TOOL_PREFIX) && t.name !== "search_memories_between"),
+      project: t._project ?? null,
+      destructive: Boolean(t.annotations?.destructiveHint),
+      disabled: off.has(t.name),
+    })),
+  };
+}
+
+/** The annotated catalog, for the UI and for /api/tools. */
+export async function toolCatalog() {
+  return (await buildToolList()).catalog;
 }
 
 // ── tool dispatch ─────────────────────────────────────────────────────────────
@@ -667,6 +690,11 @@ export async function handleMcp(request: JsonRpcRequest): Promise<unknown | null
     case "tools/call": {
       const name = String((params as any).name ?? "");
       const args = ((params as any).arguments ?? {}) as Record<string, any>;
+      // Hiding a tool from the list is not enough — a client that cached an
+      // older list would still be able to call it.
+      if ((await disabledTools()).has(name)) {
+        return ok(id, toolError(`${name} is switched off for this connector.`));
+      }
       try {
         return ok(id, await callTool(name, args));
       } catch (error) {

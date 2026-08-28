@@ -7,11 +7,12 @@
   "scripts": {
     "dev": "bun run build:ui && bun --watch src/server.ts",
     "start": "bun src/server.ts",
-    "build:ui": "bun run build:js && bun run build:css",
+    "build:ui": "bun run sync:version && bun run build:js && bun run build:css",
     "build:js": "bun build src/ui/main.tsx --outdir public --minify --target browser",
     "build:css": "bun node_modules/@tailwindcss/cli/dist/index.mjs -i src/ui/app.css -o public/app.css --minify",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "sync:version": "bun scripts/sync-version.ts"
   },
   "dependencies": {
     "@kitajs/html": "^4.2.9",

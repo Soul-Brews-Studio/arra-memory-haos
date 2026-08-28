@@ -27,6 +27,8 @@ database is a file on your own machine.
 |---|---|---|
 | `owner_passphrase` | yes | Unlocks the web UI and approves MCP clients. |
 | `api_token` | no | A static bearer token for scripts and MCP clients that read a config file. Leave blank to disable that path. |
+| `search_log` | no | Record every search, including query text. Off by default — see below. |
+| `turso_sync_url` / `turso_auth_token` | no | Turn the local database into a Turso embedded replica. |
 | `public_url` | no | Set **only** when the add-on is published through a tunnel and a remote MCP client needs absolute OAuth URLs. Blank derives every URL from the request, which is correct for LAN and ingress. |
 
 ## Proving you are the owner
@@ -176,6 +178,28 @@ the mesh client runs in a different namespace. Use the server's LAN address
 (`http://192.168.1.x:11434`), not its mesh name. Learned by watching backfill
 return `{"indexed":0}` against a mesh address that answered perfectly from
 elsewhere.
+
+## Seeing and shaping the tool surface
+
+The **tools** panel lists every tool the connector offers, split into the ones
+defined in source and the ones generated from the corpus. That split is
+otherwise invisible unless you go reading a client's tool picker, and it is the
+part that changes on its own as memories are written.
+
+Any tool can be switched off. A disabled tool is hidden from `tools/list` **and
+refused if a client with a cached list calls it anyway** — hiding alone would
+not be a control. Nothing is deleted: the memories behind a generated tool are
+untouched, and re-enabling brings it straight back.
+
+Two things this is actually for:
+
+- A project with three memories does not need its own tool cluttering a model's list.
+- Turning off `remember`, `revise_memory` and `forget_memory` makes the
+  connector **read-only** for a client you do not want writing to the archive.
+
+`list_projects`, `list_tags` and `memory_stats` cannot be disabled — they are
+how a model discovers the corpus once its generated tools are gone, and hiding
+them turns a narrowed list into a dead end.
 
 ## The search log
 

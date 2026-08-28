@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { authenticate, unauthorized, type AuthConfig } from "./auth";
-import { handleMcp, type JsonRpcRequest } from "./mcp";
+import { handleMcp, toolCatalog, type JsonRpcRequest } from "./mcp";
+import { enableAllTools, setToolDisabled, UNDISABLEABLE } from "./tools";
 import {
   backfillEmbeddings,
   createMemory,
@@ -30,7 +31,16 @@ import {
   SESSION_COOKIE_NAME,
 } from "./session";
 import { approvalPage } from "./pages";
+import {
+  clearSearchLog,
+  deleteSearchLogEntry,
+  listSearchLog,
+  pruneSearchLog,
+  recordSearch,
+  searchLogStats,
+} from "./searchlog";
 import { escapeHtml, readCookie, timingSafeEqual, type MemoryKind } from "./utils";
+import { VERSION } from "./version";
 
 const PORT = Number(process.env.PORT ?? 8099);
 const PUBLIC_DIR = process.env.PUBLIC_DIR ?? `${import.meta.dir}/../public`;
@@ -161,7 +171,25 @@ const app = new Elysia()
   // ── health ─────────────────────────────────────────────────────────────────
   // Deliberately public and deliberately empty of corpus data: this is what a
   // tunnel, a uptime check, or `just serves` hits to prove the add-on is alive.
-  .get("/api/health", () => ({ status: "ok", service: "arra-memory" }))
+  // Public and deliberately free of corpus data, but NOT free of identity:
+  // "is it up" and "which build is up" are the same question in practice, and
+  // an answer that omits the version sends you to the Supervisor UI to find out.
+  .get("/api/health", () => ({
+    status: "ok",
+    service: "arra-memory",
+    version: VERSION,
+    // What is switched on, without revealing any of it. Enough to tell a
+    // misconfigured deploy from a broken one at a glance.
+    features: {
+      semantic: Boolean(process.env.OLLAMA_URL?.trim()),
+      embeddingModel: process.env.OLLAMA_URL?.trim()
+        ? (process.env.EMBEDDING_MODEL?.trim() || "bge-m3")
+        : null,
+      searchLog: (process.env.SEARCH_LOG ?? "").trim().toLowerCase() === "true",
+      replica: Boolean(process.env.TURSO_SYNC_URL?.trim()),
+      apiToken: Boolean(process.env.API_TOKEN),
+    },
+  }))
 
   // ── discovery ──────────────────────────────────────────────────────────────
   .get("/.well-known/oauth-authorization-server", ({ request }) =>
@@ -361,11 +389,24 @@ const app = new Elysia()
     if (!auth.ok) return unauthorized(originOf(request));
 
     const url = new URL(request.url);
+    const started = Date.now();
+    const query = url.searchParams.get("q") ?? undefined;
+    const kind = (url.searchParams.get("kind") as MemoryKind) || undefined;
     const memories = await searchMemories({
-      query: url.searchParams.get("q") ?? undefined,
-      kind: (url.searchParams.get("kind") as MemoryKind) || undefined,
+      query,
+      kind,
       limit: Number(url.searchParams.get("limit")) || undefined,
     });
+    // Only record a real query — the UI refetches on every keystroke and on
+    // load, and logging empty browses would bury the searches worth seeing.
+    if (query?.trim()) {
+      void recordSearch({
+        query, kind, mode: "keyword",
+        resultIds: memories.map((m) => m.id),
+        durationMs: Date.now() - started,
+        source: "web",
+      });
+    }
     return json({ memories, count: memories.length });
   })
 
@@ -487,6 +528,71 @@ const app = new Elysia()
     if (!auth.ok) return unauthorized(originOf(request));
     const body = (await request.json().catch(() => ({}))) as any;
     return json({ indexed: await backfillEmbeddings(body.limit ?? 50) });
+  })
+
+  // ── the MCP tool surface, as the owner can see and shape it ────────────────
+  .get("/api/tools", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    return json({ tools: await toolCatalog(), locked: [...UNDISABLEABLE] });
+  })
+
+  .patch("/api/tools/:name", async ({ request, params }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const body = (await request.json().catch(() => ({}))) as { disabled?: boolean };
+    try {
+      await setToolDisabled(params.name, Boolean(body.disabled));
+      return json({ name: params.name, disabled: Boolean(body.disabled) });
+    } catch (error) {
+      return json(
+        { error: "cannot_disable", message: error instanceof Error ? error.message : "refused" },
+        400,
+      );
+    }
+  })
+
+  .post("/api/tools/enable-all", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    await enableAllTools();
+    return json({ ok: true });
+  })
+
+  // ── the search log ─────────────────────────────────────────────────────────
+  .get("/api/search-log", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const url = new URL(request.url);
+    const [entries, stats] = await Promise.all([
+      listSearchLog(Number(url.searchParams.get("limit")) || 50, url.searchParams.get("q") ?? undefined),
+      searchLogStats(),
+    ]);
+    return json({ entries, stats });
+  })
+
+  .delete("/api/search-log/:id", async ({ request, params }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const deleted = await deleteSearchLogEntry(params.id);
+    return deleted ? json({ id: params.id, deleted: true }) : json({ error: "not_found" }, 404);
+  })
+
+  // Bulk delete. `all` and `olderThanDays` are mutually exclusive here for the
+  // same reason as in the MCP tool: an ambiguous request must not delete more
+  // than the caller pictured.
+  .delete("/api/search-log", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const url = new URL(request.url);
+    const days = url.searchParams.get("olderThanDays");
+    const all = url.searchParams.get("all") === "true";
+    if (all === Boolean(days)) {
+      return json({ error: "invalid", message: "Give exactly one of all=true or olderThanDays." }, 400);
+    }
+    if (all) return json({ deleted: await clearSearchLog() });
+    const { removed, cutoff } = await pruneSearchLog(Number(days));
+    return json({ deleted: removed, cutoff });
   })
 
   // What remote clients actually sent. Authenticated; see recordMcp above.
