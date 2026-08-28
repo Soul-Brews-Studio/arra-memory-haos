@@ -457,6 +457,17 @@ async function callTool(name: string, args: Record<string, any>) {
       if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
         return toolError("from and to must be ISO-8601 dates, e.g. 2026-01-01.");
       }
+
+      // A date with no time means the WHOLE day, so `to` has to be its last
+      // instant. Left as midnight, `from: 2026-08-27, to: 2026-08-27` is a
+      // zero-width range that matches nothing — which reads as "no memories
+      // that day" rather than as the bug it is. Found by asking for a single
+      // day that definitely had memories and getting back zero.
+      const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+      if (dateOnly.test(String(args.to).trim())) {
+        to.setUTCHours(23, 59, 59, 999);
+      }
+
       if (from > to) {
         return toolError("from must not be later than to.");
       }
