@@ -12,7 +12,24 @@ import type { SearchLogEntry, SearchLogStats } from "./types";
  * away and says exactly how much it will remove before it does. Nothing here
  * deletes on a single stray click.
  */
-export function SearchLog({ onClose, nav }: { onClose: () => void; nav?: React.ReactNode }) {
+export function SearchLog({
+  onClose,
+  nav,
+  onReplay,
+}: {
+  onClose: () => void;
+  nav?: React.ReactNode;
+  /**
+   * Run a logged search again, for real.
+   *
+   * The entry carries the query AND the scope it ran under, and both are handed
+   * back — replaying "OAuth" without the workspace it was scoped to would return
+   * a different set and quietly look like the same search. The replay is a
+   * search like any other, so it records itself: this page is a record of what
+   * was looked for, and a lookup launched from it is not an exception to that.
+   */
+  onReplay: (entry: { query: string; workspace: string; project: string; kind: string }) => void;
+}) {
   const [entries, setEntries] = useState<SearchLogEntry[]>([]);
   const [stats, setStats] = useState<SearchLogStats | null>(null);
   const [filter, setFilter] = useState("");
@@ -71,6 +88,10 @@ export function SearchLog({ onClose, nav }: { onClose: () => void; nav?: React.R
       actions={
         stats?.enabled ? (
           <>
+            <p className="meta mb-2">
+              Click any query to run it again — with the workspace and kind it was
+              scoped to. The replay is recorded like any other search.
+            </p>
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -143,7 +164,24 @@ export function SearchLog({ onClose, nav }: { onClose: () => void; nav?: React.R
                   key={e.id}
                   className="group flex items-start gap-3 rounded-lg border border-line px-3 py-2.5 transition-colors hover:border-line-bright"
                 >
-                  <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onReplay({
+                        query: e.query,
+                        workspace: e.workspace,
+                        project: e.project,
+                        kind: e.kind,
+                      })
+                    }
+                    title={
+                      e.query
+                        ? `Search for “${e.query}” again${e.workspace ? ` in ${e.workspace}` : ""}`
+                        : "This entry has no query to run"
+                    }
+                    disabled={!e.query}
+                    className="min-w-0 flex-1 rounded text-left transition-colors enabled:hover:text-ember disabled:cursor-default"
+                  >
                     <p className="prose-memory !text-[0.95rem] truncate">
                       {e.query || <span className="text-faint">(empty query)</span>}
                     </p>
@@ -188,7 +226,7 @@ export function SearchLog({ onClose, nav }: { onClose: () => void; nav?: React.R
                         </>
                       )}
                     </div>
-                  </div>
+                  </button>
 
                   <button
                     type="button"

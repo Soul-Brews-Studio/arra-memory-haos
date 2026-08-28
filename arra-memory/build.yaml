@@ -1,0 +1,19 @@
+# The base image per architecture, for the official Home Assistant builder.
+#
+# The Dockerfile pins one digest for local `docker build`; the builder overrides
+# BUILD_FROM per arch from this file. Both must name the same base or a locally
+# verified image proves nothing about the published one — so these are the same
+# 3.22 tags the pinned digest resolves from.
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:3.22
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.22
+
+# Passed through to the Dockerfile's own ARG, so bun picks the musl target that
+# matches. Alpine + the glibc bun binary fails with "not found", which reads as
+# a missing file rather than the libc mismatch it is.
+args:
+  BUILD_ARCH: "{arch}"
+
+labels:
+  org.opencontainers.image.source: https://github.com/Soul-Brews-Studio/arra-memory-haos
+  org.opencontainers.image.licenses: MIT

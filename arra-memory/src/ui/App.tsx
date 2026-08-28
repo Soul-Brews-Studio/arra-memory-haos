@@ -5,7 +5,7 @@ import { SearchLog } from "./SearchLog";
 import { Tools } from "./Tools";
 import { Workspaces } from "./Workspaces";
 import { ScopeBar } from "./ScopeBar";
-import { NavBar } from "./Menu";
+import { NavBar, Panel } from "./Menu";
 import {
   MEMORY_KINDS,
   type AgentFacet,
@@ -107,9 +107,14 @@ export default function App() {
   if (phase === "checking") return <Splash />;
   if (phase === "locked") return <Lock onOpen={() => setPhase("ready")} />;
 
+  // One nav, built once, rendered by one component in one position on every
+  // page — including the primary action. Dropping "Remember" on the other pages
+  // made the bar change width and the buttons shift under the cursor between
+  // views, which reads as a different menu rather than the same one. Writing a
+  // memory is what this app is for; it is not an archive-only errand.
   const nav = (
     <NavBar
-      primary={view === "archive" ? { label: "Remember", onSelect: () => setComposing(true) } : undefined}
+      primary={{ label: "Remember", onSelect: () => setComposing(true) }}
       items={[
         { label: "Archive", active: view === "archive", onSelect: () => setView("archive") },
         {
@@ -146,148 +151,82 @@ export default function App() {
     />
   );
 
-  if (view === "workspaces") {
-    return (
-      <div className="min-h-screen">
-        <Workspaces
-          onClose={() => setView("archive")}
-          nav={nav}
-          // Picking a workspace, project, or agent here IS the navigation: it
-          // scopes the archive and takes you there, rather than showing a second
-          // list of memories that would then have to stay in step with the real one.
-          onFilter={(next) => {
-            setScope({ ...NO_SCOPE, ...next });
-            setQuery("");
-            setView("archive");
-          }}
-        />
-        <Footer health={health} />
-      </div>
+  // Every view is a <Panel> with the same header, the same nav, in the same
+  // place. The archive used to build its own header, which is how its menu
+  // drifted from the rest.
+  const body =
+    view === "workspaces" ? (
+      <Workspaces
+        onClose={() => setView("archive")}
+        nav={nav}
+        // Picking a workspace, project, or agent here IS the navigation: it
+        // scopes the archive and takes you there, rather than showing a second
+        // list of memories that would then have to stay in step with the real one.
+        onFilter={(next) => {
+          setScope({ ...NO_SCOPE, ...next });
+          setQuery("");
+          setView("archive");
+        }}
+      />
+    ) : view === "tools" ? (
+      <Tools onClose={() => setView("archive")} nav={nav} />
+    ) : view === "log" ? (
+      <SearchLog
+        onClose={() => setView("archive")}
+        nav={nav}
+        // Replaying puts you in the archive with the logged query AND its scope
+        // restored, which runs a real search through the same path everything
+        // else uses — so it is recorded, and the log grows an entry for the
+        // replay. That is correct: it genuinely was a search.
+        onReplay={(entry) => {
+          setQuery(entry.query);
+          setKind((entry.kind as MemoryKind) || "");
+          setScope({
+            workspace: entry.workspace,
+            project: entry.project,
+            createdBy: "",
+          });
+          setView("archive");
+        }}
+      />
+    ) : (
+      <Archive
+        nav={nav}
+        query={query}
+        onQuery={setQuery}
+        searchRef={searchRef}
+        kind={kind}
+        onKind={setKind}
+        scope={scope}
+        onScope={setScope}
+        facets={facets}
+        stats={stats}
+        memories={memories}
+        loading={loading}
+        error={error}
+        onCompose={() => setComposing(true)}
+        onForget={async (id) => {
+          // Optimistic: the row disappears immediately, and a failure puts it
+          // back rather than leaving the UI lying.
+          const previous = memories;
+          setMemories((list) => list.filter((m) => m.id !== id));
+          try {
+            await api.memories.remove(id);
+            void load();
+          } catch {
+            setMemories(previous);
+            setError("Could not forget that memory.");
+          }
+        }}
+      />
     );
-  }
-
-  if (view === "tools") {
-    return (
-      <div className="min-h-screen">
-        <Tools onClose={() => setView("archive")} nav={nav} />
-        <Footer health={health} />
-      </div>
-    );
-  }
-
-  if (view === "log") {
-    return (
-      <div className="min-h-screen">
-        <SearchLog onClose={() => setView("archive")} nav={nav} />
-        <Footer health={health} />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen">
-      <header className="lamp border-b border-line">
-        <div className="mx-auto max-w-4xl px-5 pb-5 pt-7">
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <p className="eyebrow mb-1.5">Arra Memory</p>
-              <h1 className="text-2xl font-semibold tracking-tight text-ink">
-                The archive
-              </h1>
-            </div>
+      {body}
 
-            {nav}
-          </div>
-
-          <label className="sr-only" htmlFor="search">
-            Search memories
-          </label>
-          <div className="relative">
-            <svg
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
-              width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
-              <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-            <input
-              id="search"
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search titles, content, tags…"
-              className="w-full rounded-lg border border-line bg-panel py-2.5 pl-10 pr-16 text-ink placeholder:text-faint focus:border-transparent"
-            />
-            <kbd className="meta pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-line px-1.5 py-0.5">
-              /
-            </kbd>
-          </div>
-
-          <ScopeBar
-            scope={scope}
-            workspaces={facets.workspaces}
-            agents={facets.agents}
-            onChange={setScope}
-            onClear={() => setScope(NO_SCOPE)}
-          />
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <KindFilter value={kind} counts={stats?.kinds ?? {}} onChange={setKind} />
-            <p className="meta">
-              {loading
-                ? "searching…"
-                : `${memories.length} shown${
-                    stats ? ` · ${stats.total} in corpus` : ""
-                  }`}
-            </p>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-4xl px-5 py-6">
-        {error && (
-          <p
-            role="alert"
-            className="mb-4 rounded-lg border border-[#5c2320] bg-[#2a1614] px-3 py-2 text-sm text-[#f0928f]"
-          >
-            {error}
-          </p>
-        )}
-
-        {memories.length === 0 && !loading ? (
-          <Empty
-            query={query}
-            kind={kind}
-            scope={scope}
-            onClearScope={() => setScope(NO_SCOPE)}
-            onCompose={() => setComposing(true)}
-          />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {memories.map((memory) => (
-              <MemoryCard
-                key={memory.id}
-                memory={memory}
-                query={query}
-                onDelete={async (id) => {
-                  // Optimistic: the row disappears immediately, and a failure
-                  // puts it back rather than leaving the UI lying.
-                  const previous = memories;
-                  setMemories((list) => list.filter((m) => m.id !== id));
-                  try {
-                    await api.memories.remove(id);
-                    void load();
-                  } catch {
-                    setMemories(previous);
-                    setError("Could not forget that memory.");
-                  }
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </main>
-
+      {/* Outside the view switch, so Remember works from every page rather than
+          silently doing nothing on three of them. */}
       {composing && (
         <Compose
           // Pre-filled from what you are currently looking at. Writing a memory
@@ -308,10 +247,127 @@ export default function App() {
 }
 
 /**
- * Which build is running and what is switched on — the same question
- * /api/health answers, without leaving the page. Rendered on every view so it
- * is never the thing you navigated away from.
+ * The archive — the same <Panel> the other three views use.
+ *
+ * It used to hand-roll its own header. That is how its menu drifted: the same
+ * NavBar sat inside different markup, so the bar moved and changed width when
+ * you navigated. The search box, scope bar and kind filter go through Panel's
+ * `actions` slot, which is exactly what that slot is for.
  */
+function Archive({
+  nav,
+  query,
+  onQuery,
+  searchRef,
+  kind,
+  onKind,
+  scope,
+  onScope,
+  facets,
+  stats,
+  memories,
+  loading,
+  error,
+  onCompose,
+  onForget,
+}: {
+  nav: React.ReactNode;
+  query: string;
+  onQuery: (value: string) => void;
+  searchRef: React.RefObject<HTMLInputElement | null>;
+  kind: MemoryKind | "";
+  onKind: (kind: MemoryKind | "") => void;
+  scope: Scope;
+  onScope: (scope: Scope) => void;
+  facets: { workspaces: WorkspaceFacet[]; agents: AgentFacet[] };
+  stats: MemoryStats | null;
+  memories: Memory[];
+  loading: boolean;
+  error: string | null;
+  onCompose: () => void;
+  onForget: (id: string) => void;
+}) {
+  return (
+    <Panel
+      eyebrow="Arra Memory"
+      title="The archive"
+      nav={nav}
+      // Archive is the home view, so there is nowhere to close to — Escape and
+      // the nav's own Archive button both already land here.
+      onClose={() => {}}
+      actions={
+        <>
+          <label className="sr-only" htmlFor="search">
+            Search memories
+          </label>
+          <div className="relative">
+            <svg
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+              width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
+              <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <input
+              id="search"
+              ref={searchRef}
+              value={query}
+              onChange={(e) => onQuery(e.target.value)}
+              placeholder="Search titles, content, tags…"
+              className="w-full rounded-lg border border-line bg-panel py-2.5 pl-10 pr-16 text-ink placeholder:text-faint focus:border-transparent"
+            />
+            <kbd className="meta pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-line px-1.5 py-0.5">
+              /
+            </kbd>
+          </div>
+
+          <ScopeBar
+            scope={scope}
+            workspaces={facets.workspaces}
+            agents={facets.agents}
+            onChange={onScope}
+            onClear={() => onScope({ workspace: "", project: "", createdBy: "" })}
+          />
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <KindFilter value={kind} counts={stats?.kinds ?? {}} onChange={onKind} />
+            <p className="meta">
+              {loading
+                ? "searching…"
+                : `${memories.length} shown${stats ? ` · ${stats.total} in corpus` : ""}`}
+            </p>
+          </div>
+        </>
+      }
+    >
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg border border-[#5c2320] bg-[#2a1614] px-3 py-2 text-sm text-[#f0928f]"
+        >
+          {error}
+        </p>
+      )}
+
+      {memories.length === 0 && !loading ? (
+        <Empty
+          query={query}
+          kind={kind}
+          scope={scope}
+          onClearScope={() => onScope({ workspace: "", project: "", createdBy: "" })}
+          onCompose={onCompose}
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {memories.map((memory) => (
+            <MemoryCard key={memory.id} memory={memory} query={query} onDelete={onForget} />
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function Footer({ health }: { health: Health | null }) {
   if (!health) return null;
   return (

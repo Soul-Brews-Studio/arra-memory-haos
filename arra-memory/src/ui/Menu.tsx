@@ -90,8 +90,17 @@ export function Panel({
 }) {
   // Escape still leaves — it is the reflex people have already built here, and
   // there is no cost to honouring it on a page.
+  //
+  // Except when a dialog is open on top. Both listeners are on `window`, so
+  // stopPropagation from the dialog cannot help: one Escape would dismiss the
+  // compose form AND navigate the page out from under it. Escape belongs to the
+  // topmost layer, so the page yields while one exists.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector('[role="dialog"]')) return;
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

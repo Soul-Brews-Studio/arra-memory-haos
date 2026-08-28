@@ -1,6 +1,12 @@
-# Digest-pinned: Supervisor 2026.04+ supplies no implicit BUILD_FROM, so an
-# unpinned or absent base is a build that fails late rather than early.
-FROM ghcr.io/home-assistant/base:3.22@sha256:0eda502b4d16e0433ace512d857ec3e86497d4214091ee459078ee4df6373f63
+# Digest-pinned by DEFAULT: Supervisor 2026.04+ supplies no implicit BUILD_FROM,
+# so an unpinned or absent base is a build that fails late rather than early.
+#
+# It is an ARG rather than a literal so the official Home Assistant builder can
+# substitute the per-architecture base from build.yaml when publishing to ghcr.
+# A plain `docker build` with no argument still gets the pinned digest, which is
+# what makes a local verification build meaningful.
+ARG BUILD_FROM=ghcr.io/home-assistant/base:3.22@sha256:0eda502b4d16e0433ace512d857ec3e86497d4214091ee459078ee4df6373f63
+FROM ${BUILD_FROM}
 
 ARG BUILD_VERSION="dev"
 ARG BUILD_ARCH="amd64"
