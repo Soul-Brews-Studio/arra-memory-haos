@@ -12,7 +12,7 @@ import type { SearchLogEntry, SearchLogStats } from "./types";
  * away and says exactly how much it will remove before it does. Nothing here
  * deletes on a single stray click.
  */
-export function SearchLog({ onClose }: { onClose: () => void }) {
+export function SearchLog({ onClose, nav }: { onClose: () => void; nav?: React.ReactNode }) {
   const [entries, setEntries] = useState<SearchLogEntry[]>([]);
   const [stats, setStats] = useState<SearchLogStats | null>(null);
   const [filter, setFilter] = useState("");
@@ -67,6 +67,7 @@ export function SearchLog({ onClose }: { onClose: () => void }) {
           : undefined
       }
       onClose={onClose}
+      nav={nav}
       actions={
         stats?.enabled ? (
           <>

@@ -14,7 +14,7 @@ import type { ToolInfo } from "./types";
  * Switching one off hides it from `tools/list` and refuses it if called
  * anyway. Nothing is deleted; re-enable and it returns.
  */
-export function Tools({ onClose }: { onClose: () => void }) {
+export function Tools({ onClose, nav }: { onClose: () => void; nav?: React.ReactNode }) {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [locked, setLocked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -69,6 +69,7 @@ export function Tools({ onClose }: { onClose: () => void }) {
       title={`${tools.length} tools${offCount ? `, ${offCount} off` : ""}`}
       subtitle="A tool that is off is hidden from clients and refused if called anyway. Nothing is deleted — switch it back on and it returns."
       onClose={onClose}
+      nav={nav}
       actions={
         offCount > 0 ? (
           <button

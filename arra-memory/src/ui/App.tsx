@@ -17,8 +17,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
-  const [showLog, setShowLog] = useState(false);
-  const [showTools, setShowTools] = useState(false);
+  // One view at a time. These were modals over the archive; a search log with
+  // hundreds of rows is a page, not something to read through a window.
+  const [view, setView] = useState<"archive" | "log" | "tools">("archive");
   const [health, setHealth] = useState<Health | null>(null);
 
   const searchRef = useSlashFocus();
@@ -70,6 +71,57 @@ export default function App() {
   if (phase === "checking") return <Splash />;
   if (phase === "locked") return <Lock onOpen={() => setPhase("ready")} />;
 
+  const nav = (
+    <NavBar
+      primary={view === "archive" ? { label: "Remember", onSelect: () => setComposing(true) } : undefined}
+      items={[
+        { label: "Archive", active: view === "archive", onSelect: () => setView("archive") },
+        {
+          label: "Tools",
+          title: "Which MCP tools this connector offers, and what to switch off",
+          active: view === "tools",
+          onSelect: () => setView("tools"),
+        },
+        ...(health?.features.searchLog
+          ? [{
+              label: "Search log",
+              title: "What has been looked for",
+              active: view === "log",
+              onSelect: () => setView("log"),
+            }]
+          : []),
+        {
+          label: "Lock",
+          title: "End this session",
+          danger: true,
+          onSelect: () =>
+            void api.session.close().finally(() => {
+              setPhase("locked");
+              setMemories([]);
+            }),
+        },
+      ]}
+    />
+  );
+
+  if (view === "tools") {
+    return (
+      <div className="min-h-screen">
+        <Tools onClose={() => setView("archive")} nav={nav} />
+        <Footer health={health} />
+      </div>
+    );
+  }
+
+  if (view === "log") {
+    return (
+      <div className="min-h-screen">
+        <SearchLog onClose={() => setView("archive")} nav={nav} />
+        <Footer health={health} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <header className="lamp border-b border-line">
@@ -82,33 +134,7 @@ export default function App() {
               </h1>
             </div>
 
-            <NavBar
-              primary={{ label: "Remember", onSelect: () => setComposing(true) }}
-              items={[
-                {
-                  label: "Tools",
-                  title: "Which MCP tools this connector offers, and what to switch off",
-                  onSelect: () => setShowTools(true),
-                },
-                ...(health?.features.searchLog
-                  ? [{
-                      label: "Search log",
-                      title: "What has been looked for",
-                      onSelect: () => setShowLog(true),
-                    }]
-                  : []),
-                {
-                  label: "Lock",
-                  title: "End this session",
-                  danger: true,
-                  onSelect: () =>
-                    void api.session.close().finally(() => {
-                      setPhase("locked");
-                      setMemories([]);
-                    }),
-                },
-              ]}
-            />
+            {nav}
           </div>
 
           <label className="sr-only" htmlFor="search">
@@ -186,10 +212,6 @@ export default function App() {
         )}
       </main>
 
-      {showTools && <Tools onClose={() => setShowTools(false)} />}
-
-      {showLog && <SearchLog onClose={() => setShowLog(false)} />}
-
       {composing && (
         <Compose
           onClose={() => setComposing(false)}
@@ -199,7 +221,28 @@ export default function App() {
           }}
         />
       )}
+
+      <Footer health={health} />
     </div>
+  );
+}
+
+/**
+ * Which build is running and what is switched on — the same question
+ * /api/health answers, without leaving the page. Rendered on every view so it
+ * is never the thing you navigated away from.
+ */
+function Footer({ health }: { health: Health | null }) {
+  if (!health) return null;
+  return (
+    <footer className="mx-auto max-w-4xl px-5 pb-8">
+      <p className="meta border-t border-line pt-3">
+        Arra Memory v{health.version}
+        {health.features.semantic && ` · semantic (${health.features.embeddingModel})`}
+        {health.features.replica && " · replicated"}
+        {health.features.searchLog && " · logging searches"}
+      </p>
+    </footer>
   );
 }
 
