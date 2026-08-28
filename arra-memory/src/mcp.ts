@@ -31,7 +31,40 @@ import { MEMORY_KINDS, slugify, type MemoryKind } from "./utils";
  * client knows the list is live, and re-reads it after writes.
  */
 
-const PROTOCOL_VERSION = "2026-07-28";
+/**
+ * Protocol versions this server will speak, newest first.
+ *
+ * The negotiation rule matters more than the list. A server MUST answer
+ * `initialize` with a version the CLIENT can speak — echoing the client's
+ * requested version when it is supported, and only falling back to its own
+ * preference when it is not. Replying with a version the client does not know
+ * is a silent, total failure: the client completes the handshake, reports
+ * itself connected, and then never calls tools/list.
+ *
+ * Measured against claude.ai on 2026-08-28: it requested `2025-06-18`, this
+ * server answered `2026-07-28` because the value was hard-coded, and the
+ * connector showed "connected" with "no tools available" and no error anywhere.
+ *
+ * The wire format has not changed across these revisions for what this server
+ * implements — initialize, tools/list, tools/call over JSON-RPC — so accepting
+ * all of them is honest rather than merely permissive.
+ */
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  "2026-07-28",
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+] as const;
+
+const PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
+
+/** Echo the client's version when we speak it; otherwise offer our own. */
+function negotiateProtocol(requested: unknown): string {
+  return typeof requested === "string" &&
+    (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
+    ? requested
+    : PREFERRED_PROTOCOL_VERSION;
+}
 
 /** How many projects may become their own tool. Beyond this, use the filter. */
 const MAX_GENERATED_TOOLS = 12;
@@ -485,7 +518,7 @@ export async function handleMcp(request: JsonRpcRequest): Promise<unknown | null
   switch (method) {
     case "initialize":
       return ok(id, {
-        protocolVersion: PROTOCOL_VERSION,
+        protocolVersion: negotiateProtocol((params as any).protocolVersion),
         // listChanged tells the client the tool list is live — which it is, as
         // writing a memory under a new project adds a tool.
         capabilities: { tools: { listChanged: true } },
