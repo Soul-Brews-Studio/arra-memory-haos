@@ -93,6 +93,18 @@ const CORS_HEADERS: Record<string, string> = {
   "access-control-max-age": "86400",
 };
 
+/**
+ * One JSON-RPC message as a single SSE frame.
+ *
+ * `event: message` is what the Streamable HTTP transport names its data frames;
+ * a bare `data:` line is accepted by some clients and ignored by others, so it
+ * is spelled out. The trailing blank line terminates the frame and is required
+ * — without it the client waits for a frame that never completes.
+ */
+function sseFrame(payload: unknown): string {
+  return `event: message\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
 /** 405 with the Allow header the spec expects a client to read. */
 const methodNotAllowed = () =>
   new Response(
@@ -465,7 +477,35 @@ const app = new Elysia()
     const response = await handleMcp(body);
     // A notification returns nothing at all — 202 with an empty body is the
     // correct answer, and sending a JSON-RPC envelope would be a violation.
-    return response === null ? new Response(null, { status: 202 }) : json(response);
+    if (response === null) {
+      return new Response(null, { status: 202, headers: CORS_HEADERS });
+    }
+
+    // Streamable HTTP lets the server answer a POST with either a JSON body or
+    // an SSE stream, and says to honour what the client asked for in Accept.
+    //
+    // Honouring it is not optional in practice. claude.ai sends
+    // `Accept: application/json, text/event-stream`, and given a plain JSON
+    // reply it authenticates successfully, reports the connector connected,
+    // and then never surfaces a single tool — its bootstrap stream simply
+    // carries no `event: tools` for this server while every SSE-answering
+    // server it talks to has one. Measured 2026-08-28.
+    const accept = request.headers.get("accept") ?? "";
+    if (accept.includes("text/event-stream")) {
+      return new Response(sseFrame(response), {
+        headers: {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          // Cloudflare buffers by default, which would hold a short stream
+          // until the connection closes and defeat the point of streaming.
+          "x-accel-buffering": "no",
+          ...CORS_HEADERS,
+        },
+      });
+    }
+
+    return json(response);
   })
 
   // Streamable HTTP defines GET on the MCP endpoint as "open an SSE stream for
