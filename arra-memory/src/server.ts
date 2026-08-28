@@ -70,6 +70,17 @@ function originOf(request: Request): string {
 
 const isSecure = (request: Request) => originOf(request).startsWith("https://");
 
+/** 405 with the Allow header the spec expects a client to read. */
+const methodNotAllowed = () =>
+  new Response(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32000, message: "Method not allowed. This endpoint accepts POST only." },
+    }),
+    { status: 405, headers: { "content-type": "application/json", allow: "POST" } },
+  );
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -429,6 +440,22 @@ const app = new Elysia()
     // correct answer, and sending a JSON-RPC envelope would be a violation.
     return response === null ? new Response(null, { status: 202 }) : json(response);
   })
+
+  // Streamable HTTP defines GET on the MCP endpoint as "open an SSE stream for
+  // server-initiated messages", and requires a server that does not offer one
+  // to answer 405 Method Not Allowed.
+  //
+  // This matters far more than it looks. Without these two routes the catch-all
+  // SPA handler below answers GET /mcp with index.html and HTTP 200 — a client
+  // probing for the stream is handed a React page and told it succeeded.
+  // Measured against claude.ai on 2026-08-28: the connector authorized fine,
+  // reported itself "connected", and then showed "no tools available" with no
+  // error on either side.
+  //
+  // This server is stateless: there is no server-initiated stream and no
+  // session to delete, so both verbs are an honest 405.
+  .get("/mcp", () => methodNotAllowed())
+  .delete("/mcp", () => methodNotAllowed())
 
   // ── the UI ─────────────────────────────────────────────────────────────────
   .get("/*", async ({ request }) => {
