@@ -9,7 +9,7 @@ import { Workspaces } from "./Workspaces";
 import { NavBar, Panel } from "./Menu";
 import { EMPTY_ROUTE, useRoute, type View } from "./route";
 import { applyServerDefaultLang, t, useLang } from "./i18n";
-import { applyServerDefaultTheme } from "./theme";
+import { applyServerDefaultTheme, THEMES, useTheme } from "./theme";
 import {
   EMPTY_SCOPE,
   SUGGESTED_KINDS,
@@ -34,6 +34,7 @@ export default function App() {
   const { view, query } = route;
   // The value and setter, not just the re-render: the switch is in the nav now.
   const [lang, setLang] = useLang();
+  const [theme, setTheme] = useTheme();
   const scope: Scope = {
     kind: route.kind,
     workspace: route.workspace,
@@ -135,6 +136,11 @@ export default function App() {
     <NavBar
       // Remember moved onto the Memory page itself — writing a memory is
       // something you do while looking at your memories, not a nav destination.
+      themes={{
+        current: theme,
+        options: THEMES,
+        onSelect: setTheme,
+      }}
       lang={{
         label: lang === "th" ? "EN" : "ไทย",
         title: t("lang.label"),

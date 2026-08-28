@@ -33,8 +33,24 @@ export interface NavItem {
 export function NavBar({
   items,
   lang,
+  themes,
 }: {
   items: NavItem[];
+  /**
+   * The palette, as swatches in the bar.
+   *
+   * Six dots rather than a menu, for the same reason the filters are chips:
+   * every option is visible and one click away, and nothing has to be opened to
+   * find out what is in it. A colour is also the one setting you can judge
+   * without reading a label, so the swatch IS the control — the names only
+   * appear on hover, and the fuller picker with descriptions stays in Settings
+   * for anyone who wants to read about them first.
+   */
+  themes?: {
+    current: string;
+    options: Array<{ id: string; label: string; note: string; swatch: [string, string] }>;
+    onSelect: (id: string) => void;
+  };
   /**
    * The language switch, in the bar itself.
    *
@@ -73,6 +89,43 @@ export function NavBar({
           {item.label}
         </button>
       ))}
+
+      {themes && (
+        <span className="ml-1 flex items-center gap-1" role="group" aria-label="Theme">
+          {themes.options.map((item) => {
+            const on = item.id === themes.current;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => themes.onSelect(item.id)}
+                aria-pressed={on}
+                aria-label={item.label}
+                title={`${item.label} — ${item.note}`}
+                className="grid size-6 place-items-center rounded-full border transition-transform hover:scale-110"
+                style={{
+                  background: item.swatch[0],
+                  borderColor: on ? "var(--color-ember)" : "var(--color-line)",
+                  // The active swatch is ringed rather than merely recoloured:
+                  // on a bar of six coloured dots, colour cannot also carry
+                  // selection without one of the two becoming unreadable.
+                  boxShadow: on ? "0 0 0 2px var(--color-ember-soft)" : undefined,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="block rounded-full transition-all"
+                  style={{
+                    background: item.swatch[1],
+                    width: on ? "0.6rem" : "0.45rem",
+                    height: on ? "0.6rem" : "0.45rem",
+                  }}
+                />
+              </button>
+            );
+          })}
+        </span>
+      )}
 
       {lang && (
         <button
