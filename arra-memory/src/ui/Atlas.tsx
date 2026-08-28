@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { api } from "./api";
 import { kindColor } from "./Chips";
 import { Panel } from "./Menu";
+import { Method } from "./Method";
 import { t } from "./i18n";
 import type { Graph, GraphNode, Memory, Scope } from "./types";
 
@@ -36,6 +37,9 @@ import type { Graph, GraphNode, Memory, Scope } from "./types";
 
 type Mode = "map" | "web";
 
+/** How many names can share a panel this size before it is a list, not a map. */
+const LABEL_CAP = 20;
+
 export function Atlas({
   onClose,
   nav,
@@ -60,6 +64,19 @@ export function Atlas({
   // second to move one box would be absurd.
   const hoverBox = useRef<HTMLDivElement>(null);
   const cardBox = useRef<HTMLDivElement>(null);
+
+  /**
+   * Show every name at once, as if hovering all of them.
+   *
+   * Capped, because labels are the one thing in this scene that cannot overlap
+   * gracefully: two glows on top of each other are brighter, two names on top
+   * of each other are unreadable. Twenty is about where a panel this size stops
+   * being a picture and starts being a list.
+   */
+  const [showNames, setShowNames] = useState(false);
+  const namesOn = useRef(false);
+  namesOn.current = showNames;
+  const labelRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   // The clicked memory's full text. The graph carries titles only — sending
   // every body with the geometry would multiply the payload for content that
@@ -617,6 +634,25 @@ export function Atlas({
         box.style.opacity = projected[i * 3 + 2]! > 0 ? "1" : "0";
       };
 
+      // Labels ride the same projection as the picking, so a name is always
+      // over the soma it belongs to — no second source of truth for position.
+      if (namesOn.current) {
+        for (let i = 0; i < labelRefs.current.length; i++) {
+          const box = labelRefs.current[i];
+          if (!box) continue;
+          const li = Number(box.dataset.node);
+          const r = projected[li * 3 + 2]!;
+          if (r <= 0) { box.style.opacity = "0"; continue; }
+          const x = projected[li * 3]!;
+          const y = projected[li * 3 + 1]!;
+          box.style.transform = `translate(${Math.round(x + r + 6)}px, ${Math.round(y - 8)}px)`;
+          // The name you are pointing at, or reading, comes fully forward; the
+          // rest sit back so twenty labels read as context rather than as
+          // twenty competing claims on your attention.
+          box.style.opacity = li === selectedIndex || li === idx ? "1" : "0.55";
+        }
+      }
+
       place(hoverBox.current, idx === selectedIndex ? -1 : idx, -10);
 
       renderer.render(scene, camera);
@@ -649,6 +685,13 @@ export function Atlas({
 
   const dense = (graph?.density ?? 0) > 0.5;
 
+  // Importance-ordered, then capped. The index is carried alongside because the
+  // render loop looks positions up by node index, not by label slot.
+  const labelled = (graph?.nodes ?? [])
+    .map((node, i) => ({ node, i }))
+    .sort((a, b) => b.node.importance - a.node.importance)
+    .slice(0, LABEL_CAP);
+
   return (
     <Panel
       eyebrow={t("nav.atlas")}
@@ -669,6 +712,18 @@ export function Atlas({
               {t(m === "map" ? "atlas.map" : "atlas.web")}
             </button>
           ))}
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={showNames}
+            onClick={() => setShowNames((v) => !v)}
+            title={t("atlas.namesTitle")}
+          >
+            {t("atlas.names")}
+            {graph && graph.nodes.length > LABEL_CAP && (
+              <span className="chip-count">{LABEL_CAP}</span>
+            )}
+          </button>
           {graph && (
             <span className="meta ml-2">
               {graph.nodes.length} · {graph.k ? `k=${graph.k}` : "—"} ·{" "}
@@ -705,6 +760,25 @@ export function Atlas({
             className="w-full overflow-hidden rounded-xl border border-line bg-panel"
             style={{ aspectRatio: "16 / 10" }}
           />
+          {/* Every name at once — the hover tooltip, for all of them.
+              Positioned by the render loop, not by React: they follow somas that
+              move every frame. Capped and ordered by importance, so if the
+              corpus outgrows the cap it is the memories someone marked as
+              mattering that keep their labels. */}
+          {showNames &&
+            graph &&
+            labelled.map(({ node, i }, slot) => (
+              <div
+                key={node.id}
+                ref={(el) => { labelRefs.current[slot] = el; }}
+                data-node={i}
+                className="pointer-events-none absolute left-0 top-0 max-w-[13rem] truncate rounded px-1 font-mono text-[0.68rem] leading-tight"
+                style={{ background: "color-mix(in oklab, var(--color-ground) 72%, transparent)", color: "var(--color-dim)" }}
+              >
+                {node.title}
+              </div>
+            ))}
+
           {/* Hover: a name, next to the thing you are pointing at. It used to
               live in a fixed corner, which meant reading it required looking
               away from the node it described. */}
@@ -794,6 +868,12 @@ export function Atlas({
           </div>
         </section>
       )}
+
+      {/* The working, under the drawing it explains. A visualisation makes a
+          claim — "these two are near each other" — and a claim nobody can check
+          is decoration. Every figure in there is read from the same response
+          that positioned the points, so it cannot drift from the picture. */}
+      {graph && graph.nodes.length > 0 && <Method graph={graph} />}
     </Panel>
   );
 }
