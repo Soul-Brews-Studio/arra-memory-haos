@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { MemoryKind } from "./types";
 
 /**
  * The URL is the state.
@@ -39,19 +38,27 @@ const ALIASES: Record<string, View> = { tools: "settings" };
 export interface Route {
   view: View;
   query: string;
-  kind: MemoryKind | "";
-  workspace: string;
-  project: string;
-  createdBy: string;
+  /**
+   * Every facet is a SET, because every chip row is multi-select. Repeated
+   * params in the URL — `?kind=learn&kind=retro` — which is both how the server
+   * reads them and how a browser serialises a multi-value field, so the link is
+   * the query with nothing invented in between.
+   */
+  kind: string[];
+  workspace: string[];
+  project: string[];
+  createdBy: string[];
+  tag: string[];
 }
 
 export const EMPTY_ROUTE: Route = {
   view: "archive",
   query: "",
-  kind: "",
-  workspace: "",
-  project: "",
-  createdBy: "",
+  kind: [],
+  workspace: [],
+  project: [],
+  createdBy: [],
+  tag: [],
 };
 
 /** `#/workspaces` or `#/archive?workspace=x&q=y` → a Route. */
@@ -68,10 +75,11 @@ export function parseRoute(hash: string): Route {
   return {
     view,
     query: params.get("q") ?? "",
-    kind: (params.get("kind") as MemoryKind) || "",
-    workspace: params.get("workspace") ?? "",
-    project: params.get("project") ?? "",
-    createdBy: params.get("agent") ?? "",
+    kind: params.getAll("kind"),
+    workspace: params.getAll("workspace"),
+    project: params.getAll("project"),
+    createdBy: params.getAll("agent"),
+    tag: params.getAll("tag"),
   };
 }
 
@@ -82,10 +90,12 @@ export function formatRoute(route: Route): string {
   // thing worth sending to someone, and "reload the same page" has to mean the
   // same results, not merely the same tab.
   if (route.query) params.set("q", route.query);
-  if (route.kind) params.set("kind", route.kind);
-  if (route.workspace) params.set("workspace", route.workspace);
-  if (route.project) params.set("project", route.project);
-  if (route.createdBy) params.set("agent", route.createdBy);
+  // append, not set: several ticked chips are several params of the same name.
+  for (const v of route.kind) params.append("kind", v);
+  for (const v of route.workspace) params.append("workspace", v);
+  for (const v of route.project) params.append("project", v);
+  for (const v of route.createdBy) params.append("agent", v);
+  for (const v of route.tag) params.append("tag", v);
   const search = params.toString();
   return `#/${route.view}${search ? `?${search}` : ""}`;
 }

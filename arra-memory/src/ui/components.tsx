@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { KIND_COLOR, MEMORY_KINDS, type Memory, type MemoryKind } from "./types";
+import { kindColor } from "./Chips";
+import type { Memory, MemoryKind } from "./types";
 
 /** A memory's kind, as a colour-coded label. Colour is never the only signal. */
 export function KindChip({ kind }: { kind: MemoryKind }) {
@@ -7,14 +8,14 @@ export function KindChip({ kind }: { kind: MemoryKind }) {
     <span
       className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[0.68rem] tracking-wide"
       style={{
-        color: KIND_COLOR[kind],
-        background: `color-mix(in oklab, ${KIND_COLOR[kind]} 14%, transparent)`,
+        color: kindColor(kind),
+        background: `color-mix(in oklab, ${kindColor(kind)} 14%, transparent)`,
       }}
     >
       <span
         aria-hidden="true"
         className="size-1.5 rounded-full"
-        style={{ background: KIND_COLOR[kind] }}
+        style={{ background: kindColor(kind) }}
       />
       {kind}
     </span>
@@ -250,38 +251,6 @@ function Highlight({ text, query }: { text: string; query: string }) {
       </mark>
       {text.slice(index + needle.length)}
     </>
-  );
-}
-
-/** The kind filter. "all" is a real option, not an absence of one. */
-export function KindFilter({
-  value,
-  counts,
-  onChange,
-}: {
-  value: MemoryKind | "";
-  counts: Record<string, number>;
-  onChange: (kind: MemoryKind | "") => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by kind">
-      <FilterPill active={value === ""} onClick={() => onChange("")}>
-        all
-      </FilterPill>
-      {MEMORY_KINDS.map((kind) => (
-        <FilterPill
-          key={kind}
-          active={value === kind}
-          color={KIND_COLOR[kind]}
-          onClick={() => onChange(value === kind ? "" : kind)}
-        >
-          {kind}
-          {counts[kind] ? (
-            <span className="ml-1 opacity-50 tabular-nums">{counts[kind]}</span>
-          ) : null}
-        </FilterPill>
-      ))}
-    </div>
   );
 }
 

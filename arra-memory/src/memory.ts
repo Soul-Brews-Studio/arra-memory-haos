@@ -14,6 +14,7 @@ import {
   normalizeUrl,
   normalizeWorkspace,
   nowIso,
+  readKind,
   parseTags,
   type MemoryKind,
 } from "./utils";
@@ -56,21 +57,27 @@ export interface CreateMemoryInput {
 export type UpdateMemoryInput = Partial<CreateMemoryInput>;
 
 /**
- * The four scope filters every search accepts.
+ * One filter value, or several.
  *
- * Every one is optional and every one omitted means "do not narrow on this".
- * That is the whole multi-agent contract: workspace and agent are FILTERS, not
+ * Every facet is optional and every omitted facet means "do not narrow on
+ * this". That is the multi-agent contract: workspace and agent are FILTERS, not
  * boundaries — an unscoped search still sees the entire corpus, so nothing an
  * agent writes can be hidden from a human looking for it.
+ *
+ * A bare string is one value and stays the shape every MCP tool passes; an array
+ * is "any of these", which is what a row of chips produces when more than one is
+ * ticked. Undefined or empty means no filtering on that facet.
  */
+export type ScopeValue = string | string[] | undefined;
+
 export interface MemoryScope {
-  kind?: MemoryKind;
-  /** Exact workspace match — the tier above project. */
-  workspace?: string;
-  /** Exact project match — the facet the dynamic MCP tools filter on. */
-  project?: string;
-  /** Exact agent match, against the `created_by` column. */
-  createdBy?: string;
+  kind?: MemoryKind | MemoryKind[];
+  /** Workspace(s) — the tier above project. */
+  workspace?: ScopeValue;
+  /** Project(s) — the facet the dynamic MCP tools filter on. */
+  project?: ScopeValue;
+  /** Agent(s), against the `created_by` column. */
+  createdBy?: ScopeValue;
 }
 
 export interface SearchMemoryInput extends MemoryScope {
@@ -83,6 +90,22 @@ export interface SearchMemoryInput extends MemoryScope {
 }
 
 /**
+ * A scope value as the JSON array `scopeFilter` binds.
+ *
+ * `[]` means "do not filter on this", which is the default and what every
+ * omitted facet becomes — so an unscoped search still sees the whole corpus.
+ * Blank entries are dropped rather than matched: a chip row with nothing ticked
+ * and a chip row ticked to "" must not mean different things.
+ */
+function scopeSet(value: ScopeValue, normalize: (v: string | undefined) => string): string {
+  const list = (Array.isArray(value) ? value : value === undefined ? [] : [value])
+    .map((v) => normalize(v))
+    .filter((v) => v !== "");
+  // De-duplicated so a repeated chip cannot change the plan SQLite picks.
+  return JSON.stringify([...new Set(list)]);
+}
+
+/**
  * The eight bound arguments for `scopeFilter` in sql.ts, in its exact order.
  *
  * Written once, here, because the order is a contract between two files and
@@ -90,11 +113,26 @@ export interface SearchMemoryInput extends MemoryScope {
  * would filter projects by workspace name and return nothing, with no error.
  */
 function scopeArgs(scope: MemoryScope): string[] {
-  const kind = scope.kind ? normalizeKind(scope.kind) : "";
-  const workspace = normalizeWorkspace(scope.workspace);
-  const project = normalizeProject(scope.project);
-  const createdBy = normalizeCreatedBy(scope.createdBy);
+  const kind = scopeSet(
+    scope.kind as ScopeValue,
+    (v) => (v ? normalizeKind(v as MemoryKind) : ""),
+  );
+  const workspace = scopeSet(scope.workspace, normalizeWorkspace);
+  const project = scopeSet(scope.project, normalizeProject);
+  const createdBy = scopeSet(scope.createdBy, normalizeCreatedBy);
   return [kind, kind, workspace, workspace, project, project, createdBy, createdBy];
+}
+
+/**
+ * A scope value as one string, for the search log.
+ *
+ * The log has a single TEXT column per facet, and it is read by a human asking
+ * "what was this search narrowed to" — so several ticked chips become
+ * "a, b" rather than being truncated to the first or dropped entirely.
+ */
+function scopeLabel(value: ScopeValue): string {
+  if (value === undefined) return "";
+  return (Array.isArray(value) ? value : [value]).filter(Boolean).join(", ");
 }
 
 export interface MemoryStats {
@@ -125,7 +163,8 @@ function toMemory(row: MemoryRow): Memory {
     id: row.id,
     title: row.title,
     content: row.content,
-    kind: normalizeKind(row.kind as MemoryKind),
+    // readKind, not normalizeKind — a stored row must never fail to load.
+    kind: readKind(row.kind),
     tags: parseTags(row.tags),
     source: row.source,
     importance: Number(row.importance),
@@ -239,9 +278,9 @@ export async function searchMemories(
   return logged(() => searchMemoriesNoLog(input), {
     query: input.query,
     mode: "keyword",
-    kind: input.kind,
-    workspace: input.workspace,
-    project: input.project,
+    kind: scopeLabel(input.kind as ScopeValue),
+    workspace: scopeLabel(input.workspace),
+    project: scopeLabel(input.project),
     tag: input.tag,
     source: input.source,
   });
@@ -499,6 +538,130 @@ export async function listWorkspaces(
   };
 }
 
+/**
+ * Every chip row, in one round trip.
+ *
+ * The archive draws four rows of chips — kind, workspace, project, agent — plus
+ * tags, and fetching each separately meant five requests to render one bar and
+ * five chances for the rows to disagree about the corpus.
+ *
+ * Counts are corpus-wide and deliberately NOT recomputed against the current
+ * filter. Chips that shrink and vanish as you tick them make the bar jump under
+ * the cursor and hide the option you need to untick; a stable row you can read
+ * once is worth more than counts that track the selection.
+ */
+export async function listFacets(): Promise<{
+  kinds: Array<{ kind: string; count: number }>;
+  workspaces: WorkspaceFacet[];
+  unassigned: number;
+  projects: ProjectFacet[];
+  agents: AgentFacet[];
+  tags: Array<{ tag: string; count: number }>;
+  total: number;
+}> {
+  await ensureSchema();
+  const conn = db();
+  const [kinds, ws, none, projects, agents, tags, summary] = await Promise.all([
+    conn.execute(MEMORIES.stats.byKind),
+    conn.execute({ sql: MEMORIES.facets.workspaces, args: [50] }),
+    conn.execute(MEMORIES.facets.unassigned),
+    conn.execute({ sql: MEMORIES.facets.allProjects, args: [50] }),
+    conn.execute({ sql: MEMORIES.facets.agents, args: ["", "", 50] }),
+    conn.execute({ sql: MEMORIES.facets.allTags, args: ["", "", 50] }),
+    conn.execute(MEMORIES.stats.summary),
+  ]);
+
+  return {
+    kinds: rows<{ kind: string; count: number }>(kinds).map((r) => ({
+      kind: String(r.kind),
+      count: Number(r.count),
+    })),
+    workspaces: rows<{
+      workspace: string; count: number; projects: number; agents: number; latest: string;
+    }>(ws).map((r) => ({
+      workspace: String(r.workspace),
+      count: Number(r.count),
+      projects: Number(r.projects),
+      agents: Number(r.agents),
+      latest: String(r.latest),
+    })),
+    unassigned: Number(firstRow<{ count: number }>(none)?.count ?? 0),
+    projects: rows<{ project: string; count: number; latest: string }>(projects).map((r) => ({
+      project: String(r.project),
+      count: Number(r.count),
+      latest: String(r.latest),
+    })),
+    agents: rows<{ agent: string; count: number; latest: string }>(agents).map((r) => ({
+      agent: String(r.agent),
+      count: Number(r.count),
+      latest: String(r.latest),
+    })),
+    tags: rows<{ tag: string; count: number }>(tags).map((r) => ({
+      tag: String(r.tag),
+      count: Number(r.count),
+    })),
+    total: Number(firstRow<{ total: number }>(summary)?.total ?? 0),
+  };
+}
+
+/** The facets a value can be merged within. */
+export type Facet = "kind" | "workspace" | "project" | "agent" | "tag";
+
+/**
+ * Rename one facet value to another, everywhere.
+ *
+ * The repair for an open vocabulary. Nothing is deleted: every memory keeps its
+ * place and simply files under a different word, so this is reversible by
+ * merging back — which matters, because "merge retros into retro" is a judgement
+ * and judgements get revised.
+ *
+ * Returns how many rows changed, so a caller can tell "merged 14" from a typo
+ * that matched nothing.
+ */
+export async function mergeFacet(
+  facet: Facet,
+  from: string,
+  to: string,
+): Promise<{ facet: Facet; from: string; to: string; merged: number }> {
+  await ensureSchema();
+
+  const normalize =
+    facet === "kind" ? normalizeKind
+    : facet === "workspace" ? normalizeWorkspace
+    : facet === "project" ? normalizeProject
+    : facet === "agent" ? normalizeCreatedBy
+    : (v: string | undefined) => (v ?? "").trim();
+
+  const source = normalize(from);
+  const target = normalize(to);
+  if (!source) throw new Error("from is required");
+  if (!target) throw new Error("to is required");
+  if (source === target) throw new Error("from and to are the same value");
+
+  const sql =
+    facet === "kind" ? MEMORIES.mergeKind
+    : facet === "workspace" ? MEMORIES.mergeWorkspace
+    : facet === "project" ? MEMORIES.mergeProject
+    : facet === "agent" ? MEMORIES.mergeAgent
+    : MEMORIES.mergeTag;
+
+  // Tag merge rewrites inside a JSON array and needs the matched value three
+  // times in a different order — see the statement in sql.ts.
+  const args = facet === "tag" ? [source, target, source] : [target, source];
+
+  const result = await db().execute({ sql, args });
+  return { facet, from: source, to: target, merged: Number(result.rowsAffected ?? 0) };
+}
+
+/** Distinct kinds with counts. Free text now, so this IS the vocabulary. */
+export async function listKinds(): Promise<Array<{ kind: string; count: number }>> {
+  await ensureSchema();
+  return rows<{ kind: string; count: number }>(await db().execute(MEMORIES.kinds)).map((r) => ({
+    kind: String(r.kind),
+    count: Number(r.count),
+  }));
+}
+
 export interface AgentFacet {
   agent: string;
   count: number;
@@ -567,9 +730,9 @@ export async function searchInRange(
   return logged(() => searchInRangeUnlogged(input), {
     query: input.query,
     mode: input.label ? `window:${input.label}` : "range",
-    kind: input.kind,
-    workspace: input.workspace,
-    project: input.project,
+    kind: scopeLabel(input.kind as ScopeValue),
+    workspace: scopeLabel(input.workspace),
+    project: scopeLabel(input.project),
     source: input.source,
   });
 }
@@ -654,9 +817,9 @@ export async function searchSemantic(
   if (input.query.trim()) void recordSearch({
     query: input.query,
     mode: "semantic",
-    kind: input.kind,
-    workspace: input.workspace,
-    project: input.project,
+    kind: scopeLabel(input.kind as ScopeValue),
+    workspace: scopeLabel(input.workspace),
+    project: scopeLabel(input.project),
     resultIds: result.memories.map((m) => m.id),
     durationMs: Date.now() - started,
     source: input.source ?? "internal",

@@ -13,16 +13,44 @@ export const nowIso = (): string => new Date().toISOString();
 
 // ── memory field normalisation ────────────────────────────────────────────────
 
-export const MEMORY_KINDS = [
-  "note",
-  "decision",
-  "lesson",
-  "context",
-  "person",
-  "project",
+/**
+ * What a memory IS. Free text, like workspace and project.
+ *
+ * This was a closed enum for eleven versions, and it was the ONLY closed set in
+ * the schema — workspace, project and tags were all free text, so `kind` was the
+ * one facet where the vocabulary had been chosen in v0.1 by someone who could
+ * not know what the corpus would become. Every argument about it was really an
+ * argument about that: whether `decision` earns a slot, where a handoff goes,
+ * whether `resonance` is a category. None of those are answerable in advance,
+ * and none of them need to be.
+ *
+ * Free text answers all of them at once: write the word when you need it.
+ *
+ * What it keeps that tags cannot give: kind is ALWAYS PRESENT and SINGLE, so
+ * anything can group by it — which is what makes a digest have an outline. A
+ * memory can have zero tags; it cannot have zero kind.
+ *
+ * The suggested vocabulary, offered in the UI and not enforced anywhere:
+ *
+ *   learn      a thing now known — about my system or someone else's
+ *   enlighten  a reframe that changes how you JUDGE, naming no system
+ *   retro      what happened, and the record of it
+ *   artifact   a thing produced for someone to read
+ *
+ * The cost is drift — `retro` and `Retro` and `retros` are three kinds. That is
+ * why writes normalise to lowercase, why the chip row shows counts (a stray
+ * `retros (1)` sits visibly beside `retro (14)`), and why merge exists.
+ */
+export const SUGGESTED_KINDS = [
+  "learn",
+  "enlighten",
+  "retro",
+  "artifact",
 ] as const;
 
-export type MemoryKind = (typeof MEMORY_KINDS)[number];
+/** Anything, once normalised. The type is a string because the data is. */
+export type MemoryKind = string;
+
 
 /**
  * Up to ten tags, deduplicated case-insensitively but preserving the casing the
@@ -60,13 +88,27 @@ export function normalizeText(value: string, name: string, max: number): string 
   return text;
 }
 
-export function normalizeKind(value: MemoryKind | undefined): MemoryKind {
-  const kind = value ?? "note";
-  if (!MEMORY_KINDS.includes(kind)) {
-    throw new Error(`kind must be one of: ${MEMORY_KINDS.join(", ")}`);
-  }
-  return kind;
+/**
+ * A kind, normalised.
+ *
+ * Lowercased and space-collapsed for the same reason workspace is: a kind exists
+ * only because memories agree on how it is spelled, and `Retro` arriving as a
+ * second kind would split a category in half with nothing to reconcile them.
+ *
+ * Never throws. It is used on both the write and the read path, and a stored row
+ * must never fail to load — the previous version validated against an enum on
+ * every read, which meant retiring a value would have made the rows carrying it
+ * unreadable rather than merely unwritable. Same shape as an index over a
+ * migrated column in the create batch: a fresh install passes, real data breaks.
+ */
+export function normalizeKind(value: string | undefined): MemoryKind {
+  const kind = (value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase().slice(0, 40);
+  return kind || "learn";
 }
+
+/** Reading is the same operation as writing now. Kept as its own name because
+ *  call sites read better, and because the two were genuinely different before. */
+export const readKind = normalizeKind;
 
 export function normalizeImportance(value: number | undefined): number {
   const importance = value ?? 3;

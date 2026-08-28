@@ -13,7 +13,10 @@ import {
   getMemoryStats,
   indexMemory,
   listAgents,
+  listFacets,
   listProjects,
+  mergeFacet,
+  type Facet,
   listTags,
   listWorkspaces,
   searchMemories,
@@ -46,6 +49,7 @@ import {
   searchLogStats,
 } from "./searchlog";
 import { escapeHtml, readCookie, timingSafeEqual, type MemoryKind } from "./utils";
+import { buildDigest, digestWindows } from "./digest";
 import { ensureSchema, replicaStatus } from "./db";
 import { VERSION } from "./version";
 
@@ -425,20 +429,102 @@ const app = new Elysia()
 
     const url = new URL(request.url);
     const query = url.searchParams.get("q") ?? undefined;
-    const kind = (url.searchParams.get("kind") as MemoryKind) || undefined;
+    const kind = url.searchParams.getAll("kind") as MemoryKind[];
     const memories = await searchMemories({
       query,
       kind,
-      // The archive's filter bar. Absent means unfiltered, exactly as it does
-      // over MCP — one filter contract, two front doors.
-      workspace: url.searchParams.get("workspace") ?? undefined,
-      project: url.searchParams.get("project") ?? undefined,
-      createdBy: url.searchParams.get("createdBy") ?? undefined,
+      // The archive's chip bar. Repeated params are a SET — ?workspace=a&workspace=b
+      // means either. Absent means unfiltered, exactly as it does over MCP:
+      // one filter contract, two front doors.
+      workspace: url.searchParams.getAll("workspace"),
+      project: url.searchParams.getAll("project"),
+      createdBy: url.searchParams.getAll("createdBy"),
       tag: url.searchParams.get("tag") ?? undefined,
       limit: Number(url.searchParams.get("limit")) || undefined,
       source: "web",
     });
     return json({ memories, count: memories.length });
+  })
+
+  /**
+   * The corpus for a time window, shaped to hand to a model.
+   *
+   * `format=md` (the default) returns markdown as text/plain so it can be copied
+   * straight out of a terminal or a fetch and pasted into a chat. `format=json`
+   * returns the same content plus the memories, for a caller that wants to
+   * render it itself.
+   */
+  .get("/api/digest", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+
+    const url = new URL(request.url);
+    const window = url.searchParams.get("window") ?? "today";
+    const digest = await buildDigest({
+      window,
+      query: url.searchParams.get("q") ?? undefined,
+      kind: url.searchParams.getAll("kind") as MemoryKind[],
+      workspace: url.searchParams.getAll("workspace"),
+      project: url.searchParams.getAll("project"),
+      createdBy: url.searchParams.getAll("createdBy"),
+      limit: Number(url.searchParams.get("limit")) || undefined,
+      excerpt: Number(url.searchParams.get("excerpt")) || undefined,
+    });
+
+    if (!digest) {
+      return json(
+        {
+          error: "unknown_window",
+          message: `window must be one of: ${digestWindows().join(", ")}, or a month like 2026_08.`,
+          windows: digestWindows(),
+        },
+        400,
+      );
+    }
+
+    if (url.searchParams.get("format") === "json") return json(digest);
+    // text/plain, not markdown: the point is that it pastes cleanly, and a
+    // browser opening this should show the text rather than download a file.
+    return new Response(digest.markdown, {
+      headers: { "content-type": "text/plain; charset=utf-8", ...CORS_HEADERS },
+    });
+  })
+
+  /**
+   * Rename one facet value to another, everywhere.
+   *
+   * POST rather than PATCH on a resource, because the thing being changed is not
+   * a resource — it is every row that happens to carry a word. Bulk, but
+   * reversible: merging back undoes it, no row is deleted and none moves. It
+   * asks for both values explicitly and refuses a no-op.
+   */
+  .post("/api/merge", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    const body = (await request.json().catch(() => ({}))) as any;
+    const facet = String(body.facet ?? "");
+    if (!["kind", "workspace", "project", "agent", "tag"].includes(facet)) {
+      return json(
+        { error: "invalid", message: "facet must be one of: kind, workspace, project, agent, tag" },
+        400,
+      );
+    }
+    try {
+      return json(await mergeFacet(facet as Facet, String(body.from ?? ""), String(body.to ?? "")));
+    } catch (error) {
+      return json(
+        { error: "invalid", message: error instanceof Error ? error.message : "merge failed" },
+        400,
+      );
+    }
+  })
+
+  // Every chip row in one request. The archive draws its whole filter bar from
+  // this, so the rows cannot disagree with each other about the corpus.
+  .get("/api/facets", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    return json(await listFacets());
   })
 
   // ── how the corpus is divided ──────────────────────────────────────────────
@@ -827,6 +913,11 @@ const app = new Elysia()
     const shell = await Bun.file(`${PUBLIC_DIR}/index.html`).text();
     const stamped = shell
       .replace('"./main.js"', `"./main.js?v=${VERSION}"`)
+      // app.css was NOT stamped, only the script — so a release that changed
+      // nothing but colour shipped a stylesheet every browser already had
+      // cached and would keep for hours. Found while testing themes: the CSS on
+      // disk was correct and the page was painting the previous palette.
+      .replace('"./app.css"', `"./app.css?v=${VERSION}"`)
       .replace('"./app.css"', `"./app.css?v=${VERSION}"`);
 
     return new Response(stamped, {

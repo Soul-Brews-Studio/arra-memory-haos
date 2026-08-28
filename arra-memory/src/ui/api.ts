@@ -1,6 +1,7 @@
 import type {
   AgentFacet,
   EmbeddingCoverage,
+  Facets,
   Health,
   Memory,
   MemoryKind,
@@ -67,23 +68,26 @@ export const api = {
   memories: {
     search: (params: {
       q?: string;
-      kind?: MemoryKind | "";
-      workspace?: string;
-      project?: string;
-      createdBy?: string;
-      tag?: string;
+      kind?: string[];
+      workspace?: string[];
+      project?: string[];
+      createdBy?: string[];
+      tag?: string[];
       limit?: number;
     }) => {
       const search = new URLSearchParams();
       if (params.q) search.set("q", params.q);
-      if (params.kind) search.set("kind", params.kind);
-      // Each omitted when empty rather than sent blank: the server reads an
-      // empty value as "do not filter", so sending "" would work by accident
-      // and mean something different the day that changes.
-      if (params.workspace) search.set("workspace", params.workspace);
-      if (params.project) search.set("project", params.project);
-      if (params.createdBy) search.set("createdBy", params.createdBy);
-      if (params.tag) search.set("tag", params.tag);
+      // Repeated params, not comma-joined: a workspace may legitimately contain
+      // a comma, and `getAll` on the server is the exact inverse of `append`.
+      for (const [key, values] of [
+        ["kind", params.kind],
+        ["workspace", params.workspace],
+        ["project", params.project],
+        ["createdBy", params.createdBy],
+        ["tag", params.tag],
+      ] as const) {
+        for (const v of values ?? []) if (v) search.append(key, v);
+      }
       if (params.limit) search.set("limit", String(params.limit));
       const qs = search.toString();
       return call<{ memories: Memory[]; count: number }>(
@@ -94,7 +98,7 @@ export const api = {
     create: (input: {
       content: string;
       title?: string;
-      kind?: MemoryKind;
+      kind?: string;
       tags?: string[];
       importance?: number;
       workspace?: string;
@@ -116,6 +120,16 @@ export const api = {
         method: "DELETE",
       }),
   },
+
+  /** Every chip row, in one request. */
+  facets: () => call<Facets>("/api/facets"),
+
+  /** Rename one facet value to another, everywhere. */
+  merge: (facet: string, from: string, to: string) =>
+    call<{ facet: string; from: string; to: string; merged: number }>("/api/merge", {
+      method: "POST",
+      body: JSON.stringify({ facet, from, to }),
+    }),
 
   /**
    * How the corpus is divided. Two calls because there are two levels: the

@@ -207,20 +207,29 @@ const MEMORY_COLUMNS = `id, title, content, kind, tags, source, importance,
 /**
  * The scope filters, in the one order every statement below uses.
  *
- * Each is the same `(? = '' OR col = ?)` shape: an empty argument disables that
- * filter entirely. That is what makes an unscoped search return the whole corpus
- * — a client that knows nothing about workspaces keeps working exactly as it did
- * — while a scoped one narrows without a second code path.
+ * Each is a SET, passed as a JSON array: `[]` disables that filter entirely,
+ * `["a"]` is one value, `["a","b"]` is either. That is what makes an unscoped
+ * search return the whole corpus — a client that knows nothing about workspaces
+ * keeps working exactly as it did — while a scoped one narrows without a second
+ * code path.
+ *
+ * Sets rather than single values because the UI filters with chips you toggle,
+ * and "show me haos-oracle AND kvm-oracle" is one question, not two searches
+ * the caller has to merge. `json_each` unrolls the array inside SQLite, so the
+ * whole thing stays one bound parameter and there is still no interpolation.
+ *
+ * Within a row it is OR (any of these workspaces); across rows it is AND (that
+ * workspace AND that agent), which is what someone ticking boxes expects.
  *
  * `prefix` exists because the FTS and vector statements alias the table.
  * args in every case: kind, kind, workspace, workspace, project, project,
  *                     createdBy, createdBy
  */
 const scopeFilter = (prefix = "") => `
-              AND (? = '' OR ${prefix}kind = ?)
-              AND (? = '' OR ${prefix}workspace = ?)
-              AND (? = '' OR ${prefix}project = ?)
-              AND (? = '' OR ${prefix}created_by = ?)`;
+              AND (? = '[]' OR ${prefix}kind       IN (SELECT value FROM json_each(?)))
+              AND (? = '[]' OR ${prefix}workspace  IN (SELECT value FROM json_each(?)))
+              AND (? = '[]' OR ${prefix}project    IN (SELECT value FROM json_each(?)))
+              AND (? = '[]' OR ${prefix}created_by IN (SELECT value FROM json_each(?)))`;
 
 export const MEMORIES = {
   // args: id, title, content, kind, tags, source, importance,
@@ -283,6 +292,51 @@ export const MEMORIES = {
               importance DESC,
               updated_at DESC
             LIMIT ?`,
+
+  /**
+   * Merge one facet value into another, across the whole corpus.
+   *
+   * Free-text facets drift: `retro`, `Retro` and `retros` become three kinds the
+   * moment three callers disagree. Merge is the repair — and it exists precisely
+   * BECAUSE the vocabulary is open. A closed enum prevents drift by refusing
+   * words; an open one permits words and needs a way to reconcile them.
+   *
+   * Renames rather than deletes: no row is removed, no row loses its place in
+   * the corpus. updated_at is deliberately untouched — a merge is a change to
+   * the vocabulary, not to the memory, and bumping it would reorder the whole
+   * archive by an act of tidying. args: to, from
+   */
+  mergeKind: `UPDATE memories SET kind = ? WHERE kind = ?`,
+  mergeWorkspace: `UPDATE memories SET workspace = ? WHERE workspace = ?`,
+  mergeProject: `UPDATE memories SET project = ? WHERE project = ?`,
+  mergeAgent: `UPDATE memories SET created_by = ? WHERE created_by = ?`,
+
+  /**
+   * Merging a TAG is not a column rewrite — tags are a JSON array, so the value
+   * has to be replaced inside it and the result de-duplicated (a memory already
+   * carrying both the source and the target must not end up with the target
+   * twice). json_each unrolls, json_group_array rebuilds, DISTINCT dedupes.
+   * args: from, to, from  — the first ? is the value MATCHED, the second the
+   * replacement, the third the existence guard. Written out because three
+   * placeholders of the same two values is exactly where a transposition hides.
+   */
+  mergeTag: `UPDATE memories
+                SET tags = (
+                      SELECT json_group_array(v) FROM (
+                        SELECT DISTINCT CASE WHEN value = ? THEN ? ELSE value END AS v
+                          FROM json_each(memories.tags)
+                      )
+                    )
+              WHERE EXISTS (
+                    SELECT 1 FROM json_each(memories.tags) WHERE value = ?
+                  )`,
+
+  /** Distinct kinds with counts — the chip row, and what merge is chosen from. */
+  kinds: `SELECT kind, COUNT(*) AS count
+            FROM memories
+           WHERE kind <> ''
+           GROUP BY kind
+           ORDER BY count DESC, kind ASC`,
 
   // args: title, content, kind, tags, source, importance,
   //       workspace, project, url, createdBy, updatedAt, id
@@ -354,6 +408,22 @@ export const MEMORIES = {
                   GROUP BY workspace
                   ORDER BY count DESC, workspace ASC
                   LIMIT ?`,
+
+    /**
+     * Every project in the corpus, regardless of workspace.
+     *
+     * The chip rows are flat: project chips are shown alongside workspace chips
+     * rather than appearing only after a workspace is picked. A dropdown that
+     * materialises once you choose something else is a nested choice, and the
+     * whole point of the chip bar is that there is nothing to open and nothing
+     * to unlock. args: limit
+     */
+    allProjects: `SELECT project, COUNT(*) AS count, MAX(updated_at) AS latest
+                    FROM memories
+                   WHERE project <> ''
+                   GROUP BY project
+                   ORDER BY count DESC, project ASC
+                   LIMIT ?`,
 
     /**
      * How many memories name no workspace at all.

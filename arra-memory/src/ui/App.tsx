@@ -1,36 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "./api";
-import { KindFilter, MemoryCard, useSlashFocus } from "./components";
+import { MemoryCard, useSlashFocus } from "./components";
+import { Chips } from "./Chips";
 import { SearchLog } from "./SearchLog";
 import { Tools } from "./Tools";
 import { Workspaces } from "./Workspaces";
-import { ScopeBar } from "./ScopeBar";
 import { NavBar, Panel } from "./Menu";
 import { EMPTY_ROUTE, useRoute, type View } from "./route";
+import { t, useLang } from "./i18n";
 import {
-  MEMORY_KINDS,
-  type AgentFacet,
+  EMPTY_SCOPE,
+  SUGGESTED_KINDS,
+  type Facets,
   type Health,
   type Memory,
-  type MemoryKind,
   type MemoryStats,
-  type WorkspaceFacet,
+  type Scope,
 } from "./types";
-
-/**
- * The archive's scope: which workspace, project, and agent are being shown.
- *
- * Empty in every slot means the whole corpus, which is the default and stays
- * the default — workspace and agent are filters here exactly as they are over
- * MCP, so nothing is ever hidden by not having chosen one.
- */
-export interface Scope {
-  workspace: string;
-  project: string;
-  createdBy: string;
-}
-
-const NO_SCOPE: Scope = { workspace: "", project: "", createdBy: "" };
 
 type Phase = "checking" | "locked" | "ready";
 
@@ -43,8 +29,11 @@ export default function App() {
   // the back button all work because there is nowhere else for that state to
   // hide.
   const [route, navigate] = useRoute();
-  const { view, query, kind } = route;
+  const { view, query } = route;
+  // Re-rendered when the language changes; the value is read through t().
+  useLang();
   const scope: Scope = {
+    kind: route.kind,
     workspace: route.workspace,
     project: route.project,
     createdBy: route.createdBy,
@@ -62,12 +51,12 @@ export default function App() {
   const setView = (next: View) =>
     navigate(next === "archive" ? { ...route, view: next } : { ...EMPTY_ROUTE, view: next });
   const setQuery = (next: string) => navigate({ ...route, query: next });
-  const setKind = (next: MemoryKind | "") => navigate({ ...route, kind: next });
-  const setScope = (next: Scope) => navigate({ ...route, ...next });
-  // The vocabulary the filter bar offers, fetched once and refreshed on write.
-  const [facets, setFacets] = useState<{ workspaces: WorkspaceFacet[]; agents: AgentFacet[] }>({
-    workspaces: [],
-    agents: [],
+  const setFilters = (next: { scope: Scope; tags: string[] }) =>
+    navigate({ ...route, ...next.scope, tag: next.tags });
+  // Every chip row, from one request. Refreshed with the list so a chip can
+  // never name a value the corpus no longer has.
+  const [facets, setFacets] = useState<Facets>({
+    kinds: [], workspaces: [], unassigned: 0, projects: [], agents: [], tags: [], total: 0,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,17 +81,14 @@ export default function App() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [found, corpus, divisions] = await Promise.all([
-        api.memories.search({ q: query, kind, ...scope, limit: 100 }),
+      const [found, corpus, allFacets] = await Promise.all([
+        api.memories.search({ q: query, ...scope, tag: route.tag, limit: 100 }),
         api.stats(),
-        // Loaded with the list so the filter bar always offers exactly the
-        // workspaces and agents that currently exist — a dropdown listing a
-        // workspace whose last memory was just deleted would filter to nothing.
-        api.workspaces.list(),
+        api.facets(),
       ]);
       setMemories(found.memories);
       setStats(corpus.stats);
-      setFacets({ workspaces: divisions.workspaces, agents: divisions.agents });
+      setFacets(allFacets);
       setError(null);
     } catch (err) {
       // A 401 mid-session means the cookie lapsed or was revoked elsewhere.
@@ -115,7 +101,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [query, kind, scope.workspace, scope.project, scope.createdBy]);
+  }, [query, route.kind, route.workspace, route.project, route.createdBy, route.tag]);
 
   // Debounced: the corpus is searched on every keystroke, and a local libSQL
   // file is fast enough that 180ms is about perception, not about load.
@@ -135,12 +121,12 @@ export default function App() {
   // memory is what this app is for; it is not an archive-only errand.
   const nav = (
     <NavBar
-      primary={{ label: "Remember", onSelect: () => setComposing(true) }}
+      primary={{ label: t("nav.remember"), onSelect: () => setComposing(true) }}
       items={[
         // Weights, not array order — see NavItem. Gaps of 10 leave room to
         // add a destination between two existing ones without renumbering.
         {
-          label: "Archive",
+          label: t("nav.archive"),
           weight: 10,
           active: view === "archive",
           onSelect: () => setView("archive"),
@@ -156,8 +142,8 @@ export default function App() {
         // to it.
         ...(health?.features.searchLog
           ? [{
-              label: "Search log",
-              title: "What has been looked for",
+              label: t("nav.searchLog"),
+              title: t("nav.searchLog.title"),
               weight: 30,
               active: view === "log",
               onSelect: () => setView("log"),
@@ -166,15 +152,15 @@ export default function App() {
         // Configuration lives at the end, where configuration belongs — you
         // pass the things you use daily to reach the thing you set once.
         {
-          label: "Settings",
-          title: "Which MCP tools this connector offers, and what to switch off",
+          label: t("nav.settings"),
+          title: t("nav.settings.title"),
           weight: 90,
           active: view === "settings",
           onSelect: () => setView("settings"),
         },
         {
-          label: "Lock",
-          title: "End this session",
+          label: t("nav.lock"),
+          title: t("nav.lock.title"),
           danger: true,
           weight: 100,
           onSelect: () =>
@@ -199,7 +185,15 @@ export default function App() {
         // scopes the archive and takes you there, rather than showing a second
         // list of memories that would then have to stay in step with the real one.
         onFilter={(next) => {
-          navigate({ ...EMPTY_ROUTE, view: "archive", ...next });
+          // Arrays, because every facet is a set now — a drill-down is simply a
+          // one-element selection.
+          navigate({
+            ...EMPTY_ROUTE,
+            view: "archive",
+            workspace: next.workspace ? [next.workspace] : [],
+            project: next.project ? [next.project] : [],
+            createdBy: next.createdBy ? [next.createdBy] : [],
+          });
         }}
       />
     ) : view === "settings" ? (
@@ -217,12 +211,12 @@ export default function App() {
           // write, and the first three would be clobbered by the last since
           // they all derive `next` from the same stale route.
           navigate({
+            ...EMPTY_ROUTE,
             view: "archive",
             query: entry.query,
-            kind: (entry.kind as MemoryKind) || "",
-            workspace: entry.workspace,
-            project: entry.project,
-            createdBy: "",
+            kind: entry.kind ? [entry.kind] : [],
+            workspace: entry.workspace ? [entry.workspace] : [],
+            project: entry.project ? [entry.project] : [],
           });
         }}
       />
@@ -232,10 +226,9 @@ export default function App() {
         query={query}
         onQuery={setQuery}
         searchRef={searchRef}
-        kind={kind}
-        onKind={setKind}
         scope={scope}
-        onScope={setScope}
+        tags={route.tag}
+        onFilters={setFilters}
         facets={facets}
         stats={stats}
         memories={memories}
@@ -284,22 +277,20 @@ export default function App() {
 }
 
 /**
- * The archive — the same <Panel> the other three views use.
+ * The archive — the same <Panel> every other view uses.
  *
- * It used to hand-roll its own header. That is how its menu drifted: the same
- * NavBar sat inside different markup, so the bar moved and changed width when
- * you navigated. The search box, scope bar and kind filter go through Panel's
- * `actions` slot, which is exactly what that slot is for.
+ * It used to hand-roll its own header, which is how its menu drifted from the
+ * rest. The search box and the chip bar go through Panel's `actions` slot, which
+ * is exactly what that slot is for.
  */
 function Archive({
   nav,
   query,
   onQuery,
   searchRef,
-  kind,
-  onKind,
   scope,
-  onScope,
+  tags,
+  onFilters,
   facets,
   stats,
   memories,
@@ -312,11 +303,10 @@ function Archive({
   query: string;
   onQuery: (value: string) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
-  kind: MemoryKind | "";
-  onKind: (kind: MemoryKind | "") => void;
   scope: Scope;
-  onScope: (scope: Scope) => void;
-  facets: { workspaces: WorkspaceFacet[]; agents: AgentFacet[] };
+  tags: string[];
+  onFilters: (next: { scope: Scope; tags: string[] }) => void;
+  facets: Facets;
   stats: MemoryStats | null;
   memories: Memory[];
   loading: boolean;
@@ -324,10 +314,18 @@ function Archive({
   onCompose: () => void;
   onForget: (id: string) => void;
 }) {
+  const scoped =
+    tags.length > 0 ||
+    scope.kind.length > 0 ||
+    scope.workspace.length > 0 ||
+    scope.project.length > 0 ||
+    scope.createdBy.length > 0;
+  const clear = () => onFilters({ scope: EMPTY_SCOPE, tags: [] });
+
   return (
     <Panel
-      eyebrow="Arra Memory"
-      title="The archive"
+      eyebrow={t("archive.eyebrow")}
+      title={t("archive.title")}
       nav={nav}
       // Archive is the home view, so there is nowhere to close to — Escape and
       // the nav's own Archive button both already land here.
@@ -335,7 +333,7 @@ function Archive({
       actions={
         <>
           <label className="sr-only" htmlFor="search">
-            Search memories
+            {t("archive.searchLabel")}
           </label>
           <div className="relative">
             <svg
@@ -350,7 +348,7 @@ function Archive({
               ref={searchRef}
               value={query}
               onChange={(e) => onQuery(e.target.value)}
-              placeholder="Search titles, content, tags…"
+              placeholder={t("archive.search")}
               className="w-full rounded-lg border border-line bg-panel py-2.5 pl-10 pr-16 text-ink placeholder:text-faint focus:border-transparent"
             />
             <kbd className="meta pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-line px-1.5 py-0.5">
@@ -358,22 +356,21 @@ function Archive({
             </kbd>
           </div>
 
-          <ScopeBar
+          <Chips
+            facets={facets}
             scope={scope}
-            workspaces={facets.workspaces}
-            agents={facets.agents}
-            onChange={onScope}
-            onClear={() => onScope({ workspace: "", project: "", createdBy: "" })}
+            tags={tags}
+            onChange={onFilters}
+            onClear={clear}
           />
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <KindFilter value={kind} counts={stats?.kinds ?? {}} onChange={onKind} />
-            <p className="meta">
-              {loading
-                ? "searching…"
-                : `${memories.length} shown${stats ? ` · ${stats.total} in corpus` : ""}`}
-            </p>
-          </div>
+          <p className="meta mt-3">
+            {loading
+              ? t("archive.searching")
+              : `${memories.length} ${t("archive.shown")}${
+                  stats ? ` · ${stats.total} ${t("archive.inCorpus")}` : ""
+                }`}
+          </p>
         </>
       }
     >
@@ -388,10 +385,9 @@ function Archive({
 
       {memories.length === 0 && !loading ? (
         <Empty
-          query={query}
-          kind={kind}
-          scope={scope}
-          onClearScope={() => onScope({ workspace: "", project: "", createdBy: "" })}
+          filtered={Boolean(query) || scoped}
+          scoped={scoped}
+          onClearScope={clear}
           onCompose={onCompose}
         />
       ) : (
@@ -491,40 +487,33 @@ function Lock({ onOpen }: { onOpen: () => void }) {
 }
 
 function Empty({
-  query,
-  kind,
-  scope,
+  filtered,
+  scoped,
   onClearScope,
   onCompose,
 }: {
-  query: string;
-  kind: MemoryKind | "";
-  scope: Scope;
+  filtered: boolean;
+  scoped: boolean;
   onClearScope: () => void;
   onCompose: () => void;
 }) {
-  const scoped = Boolean(scope.workspace || scope.project || scope.createdBy);
-  const filtered = Boolean(query || kind) || scoped;
   return (
     <div className="rounded-xl border border-dashed border-line py-16 text-center">
       <p className="mb-1.5 text-ink">
-        {filtered ? "Nothing matches that." : "The archive is empty."}
+        {filtered ? t("empty.nothing") : t("empty.archive")}
       </p>
       <p className="mx-auto mb-5 max-w-sm text-sm text-dim">
-        {filtered
-          ? "Recall is literal keyword matching across titles, content and tags — try a word you know is in there."
-          : "Memories written here or by Claude over MCP will appear in this list."}
+        {filtered ? t("empty.filteredHint") : t("empty.emptyHint")}
       </p>
       {/* An empty scoped view is ambiguous — "the corpus has nothing" and "this
-          workspace has nothing" look identical — so say which one, and offer the
-          way out. Without this a filter left on reads as an empty archive. */}
+          filter has nothing" look identical — so offer the way out. */}
       {scoped && (
         <button
           type="button"
           onClick={onClearScope}
           className="rounded-lg border border-line px-3 py-1.5 text-sm text-dim transition hover:border-ember hover:text-ember"
         >
-          Search the whole corpus instead
+          {t("empty.searchAll")}
         </button>
       )}
       {!filtered && (
@@ -533,7 +522,7 @@ function Empty({
           onClick={onCompose}
           className="rounded-lg border border-line px-3 py-1.5 text-sm text-dim transition hover:border-ember hover:text-ember"
         >
-          Write the first one
+          {t("empty.writeFirst")}
         </button>
       )}
     </div>
@@ -551,10 +540,12 @@ function Compose({
 }) {
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<MemoryKind>("note");
+  const [kind, setKind] = useState<string>(SUGGESTED_KINDS[0]);
   const [tags, setTags] = useState("");
-  const [workspace, setWorkspace] = useState(scope.workspace);
-  const [project, setProject] = useState(scope.project);
+  // Pre-filled from a single ticked chip. With several ticked there is no one
+  // right answer, so it stays blank rather than guessing which one you meant.
+  const [workspace, setWorkspace] = useState(scope.workspace.length === 1 ? scope.workspace[0]! : "");
+  const [project, setProject] = useState(scope.project.length === 1 ? scope.project[0]! : "");
   const [importance, setImportance] = useState(3);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -635,20 +626,25 @@ function Compose({
 
           <div>
             <label htmlFor="kind" className="eyebrow mb-2 block">
-              Kind
+              {t("compose.kind")}
             </label>
-            <select
+            {/* An input with a datalist, not a select. Kind is free text, so the
+                four suggestions are offered and none is enforced — write
+                "resonance" today without anyone changing an enum first. A select
+                would make the vocabulary closed again by the back door. */}
+            <input
               id="kind"
+              list="kind-suggestions"
               value={kind}
-              onChange={(e) => setKind(e.target.value as MemoryKind)}
-              className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink"
-            >
-              {MEMORY_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
+              onChange={(e) => setKind(e.target.value)}
+              placeholder={SUGGESTED_KINDS.join(" · ")}
+              className="w-full rounded-lg border border-line bg-ground px-3 py-2 text-sm text-ink placeholder:text-faint"
+            />
+            <datalist id="kind-suggestions">
+              {SUGGESTED_KINDS.map((k) => (
+                <option key={k} value={k} />
               ))}
-            </select>
+            </datalist>
           </div>
 
           <div>

@@ -9,32 +9,39 @@
  * That three-way split is the whole identity, and it needs no downloaded font,
  * which matters for an add-on that may run on a house with no internet.
  *
- * Ground is warm charcoal rather than neutral grey — an archive lit by a lamp,
- * not a spreadsheet. One accent, ember, carries every interactive affordance.
+ * ── themes
+ *
+ * Every colour in the app comes from a token below. Nothing hard-codes a hex
+ * outside this file, which is what makes a theme a set of variable overrides
+ * rather than a rewrite — and it is why swapping one cannot miss a corner.
+ *
+ * The @theme block is the DEFAULT and also declares the token names to
+ * Tailwind. The [data-theme] blocks under it re-point the same names. See
+ * theme.ts for the switch.
  */
 
 @theme {
-  --color-ground: #14120f;
-  --color-panel: #1c1915;
-  --color-raised: #262119;
-  --color-line: #332e26;
-  --color-line-bright: #453e33;
+  /* Default: Slate — cool, quiet, no warm cast. */
+  --color-ground: #101418;
+  --color-panel: #171c22;
+  --color-raised: #1f262e;
+  --color-line: #2a323b;
+  --color-line-bright: #3a444f;
 
-  --color-ink: #f4f1ea;
-  --color-dim: #a8a091;
-  --color-faint: #756d5f;
+  --color-ink: #e9edf2;
+  --color-dim: #9aa6b3;
+  --color-faint: #6b7683;
 
-  --color-ember: #d8853a;
-  --color-ember-soft: #3a2717;
+  --color-ember: #5eb0c9;
+  --color-ember-soft: #14313b;
 
   /* Kinds get their own hues so the corpus is scannable by shape of thought,
-     not just by text. These are semantic, and deliberately not the accent. */
-  --color-kind-note: #8fa8c4;
-  --color-kind-decision: #d8853a;
-  --color-kind-lesson: #a3c48f;
-  --color-kind-context: #b09ac4;
-  --color-kind-person: #d4a08f;
-  --color-kind-project: #7fc0bb;
+     not just by text. Semantic, and deliberately NOT the accent — an accent
+     means "you can act on this", a kind hue means "this is what it is". */
+  --color-kind-learn: #7fa8d4;
+  --color-kind-enlighten: #c2a0e0;
+  --color-kind-retro: #8fc4a3;
+  --color-kind-artifact: #d4a58f;
 
   --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
                 "Times New Roman", serif;
@@ -42,9 +49,122 @@
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
 }
 
+/*
+ * Ember — the original. Warm charcoal, an archive lit by a lamp rather than a
+ * spreadsheet. Kept because it was the identity for eleven versions and taste
+ * is allowed to change back.
+ */
+[data-theme="ember"] {
+  --color-ground: #14120f;
+  --color-panel: #1c1915;
+  --color-raised: #262119;
+  --color-line: #332e26;
+  --color-line-bright: #453e33;
+  --color-ink: #f4f1ea;
+  --color-dim: #a8a091;
+  --color-faint: #756d5f;
+  --color-ember: #d8853a;
+  --color-ember-soft: #3a2717;
+  --color-kind-learn: #8fa8c4;
+  --color-kind-enlighten: #c9a6e0;
+  --color-kind-retro: #a3c48f;
+  --color-kind-artifact: #d4a08f;
+}
+
+/* Moss — deep green-black, sage accent. Terminal lineage without the glare. */
+[data-theme="moss"] {
+  --color-ground: #0f1411;
+  --color-panel: #161d18;
+  --color-raised: #1e2721;
+  --color-line: #29342c;
+  --color-line-bright: #38463c;
+  --color-ink: #e8efe9;
+  --color-dim: #9ab0a1;
+  --color-faint: #6a7d70;
+  --color-ember: #7fc98d;
+  --color-ember-soft: #17301f;
+  --color-kind-learn: #86b6cf;
+  --color-kind-enlighten: #c4a7d8;
+  --color-kind-retro: #9fce9a;
+  --color-kind-artifact: #d6b189;
+}
+
+/* Iris — near-black with violet. The most "screen" of the dark set. */
+[data-theme="iris"] {
+  --color-ground: #121016;
+  --color-panel: #191621;
+  --color-raised: #221e2c;
+  --color-line: #2f2a3b;
+  --color-line-bright: #40394f;
+  --color-ink: #eeebf4;
+  --color-dim: #a79fb8;
+  --color-faint: #756d86;
+  --color-ember: #a98ae0;
+  --color-ember-soft: #2a1f3d;
+  --color-kind-learn: #8aa8e0;
+  --color-kind-enlighten: #cba0e8;
+  --color-kind-retro: #92cbb0;
+  --color-kind-artifact: #dfa8a0;
+}
+
+/*
+ * Mono — no hue anywhere, including the accent.
+ *
+ * For when every accent feels like a decision someone else made. Interaction is
+ * carried by contrast and weight instead of colour, which is also the closest
+ * this app gets to being legible with any form of colour blindness.
+ */
+[data-theme="mono"] {
+  --color-ground: #111111;
+  --color-panel: #191919;
+  --color-raised: #232323;
+  --color-line: #2f2f2f;
+  --color-line-bright: #454545;
+  --color-ink: #f0f0f0;
+  --color-dim: #a5a5a5;
+  --color-faint: #737373;
+  --color-ember: #e8e8e8;
+  --color-ember-soft: #2e2e2e;
+  --color-kind-learn: #b9b9b9;
+  --color-kind-enlighten: #d6d6d6;
+  --color-kind-retro: #9a9a9a;
+  --color-kind-artifact: #cacaca;
+}
+
+/*
+ * Paper — the one light theme.
+ *
+ * Not an inversion. A light archive needs a warm ground (pure white glares
+ * beside serif body text), darker kind hues to survive on it, and a soft accent
+ * wash that does not turn into a highlighter. The tokens below are chosen for
+ * light, not derived from the dark set.
+ */
+[data-theme="paper"] {
+  --color-ground: #f6f3ec;
+  --color-panel: #fffdf8;
+  --color-raised: #efeade;
+  --color-line: #ddd6c7;
+  --color-line-bright: #c6bda9;
+  --color-ink: #23201a;
+  --color-dim: #5f584c;
+  --color-faint: #8b8274;
+  --color-ember: #a2591f;
+  --color-ember-soft: #f0e2d0;
+  --color-kind-learn: #3c6288;
+  --color-kind-enlighten: #6d4a8c;
+  --color-kind-retro: #3f6b46;
+  --color-kind-artifact: #8a5238;
+}
+
 @layer base {
   html {
     color-scheme: dark;
+  }
+
+  /* The one light theme has to say so, or the browser paints form controls,
+     scrollbars and autofill for a dark page on a light one. */
+  html[data-theme="paper"] {
+    color-scheme: light;
   }
 
   body {
@@ -83,8 +203,9 @@
 }
 
 @layer components {
-  /* The lamp: a single warm wash behind the header, so the top of the archive
-     feels lit rather than the whole page feeling tinted. */
+  /* The lamp: a single wash behind the header, so the top of the archive feels
+     lit rather than the whole page feeling tinted. Derived from the accent, so
+     it follows the theme without a per-theme rule. */
   .lamp {
     background:
       radial-gradient(
@@ -118,6 +239,46 @@
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--color-faint);
+  }
+
+  /*
+   * A filter chip. The whole filter bar is one idiom.
+   *
+   * Off is an outline; on is filled with the accent wash and outlined in the
+   * accent. Both states are visible at once across a row, which is the point —
+   * a dropdown hides its options until you open it, and three different filter
+   * idioms in one header is what made this page feel wrong.
+   */
+  .chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-line);
+    background: transparent;
+    color: var(--color-dim);
+    padding: 0.15rem 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.5;
+    transition: border-color 120ms, color 120ms, background 120ms;
+    cursor: pointer;
+  }
+
+  .chip:hover {
+    border-color: var(--color-line-bright);
+    color: var(--color-ink);
+  }
+
+  .chip[aria-pressed="true"] {
+    border-color: var(--color-ember);
+    background: var(--color-ember-soft);
+    color: var(--color-ember);
+  }
+
+  .chip-count {
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
   }
 }
 

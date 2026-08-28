@@ -15,6 +15,7 @@ import {
   type Memory,
 } from "./memory";
 import { VERSION } from "./version";
+import { buildDigest, digestWindows } from "./digest";
 import {
   clearSearchLog,
   deleteSearchLogEntry,
@@ -24,7 +25,7 @@ import {
 } from "./searchlog";
 import { disabledTools, setToolDisabled, UNDISABLEABLE } from "./tools";
 import { RELATIVE_RANGES, resolveRange } from "./timerange";
-import { MEMORY_KINDS, slugify, type MemoryKind } from "./utils";
+import { SUGGESTED_KINDS, slugify, type MemoryKind } from "./utils";
 
 /**
  * The MCP surface.
@@ -148,7 +149,22 @@ function render(memory: Memory): string {
 
 // ── static tools ──────────────────────────────────────────────────────────────
 
-const KIND_ENUM = { type: "string", enum: [...MEMORY_KINDS] };
+/**
+ * Kind, described rather than enumerated.
+ *
+ * No `enum`: the vocabulary is open, so constraining the schema would refuse a
+ * word the owner has legitimately started using. The suggestions go in the
+ * description instead, which is where a model actually reads them — and an
+ * `examples` array so a client that renders hints has something to show.
+ */
+const KIND_ENUM = {
+  type: "string",
+  description:
+    `What this memory IS. Free text — reuse an existing kind where one fits, and ` +
+    `call list_kinds to see what the corpus already uses. Common: ` +
+    `${SUGGESTED_KINDS.join(", ")}.`,
+  examples: [...SUGGESTED_KINDS],
+};
 
 const WORKSPACE_PROP = {
   type: "string",
@@ -373,6 +389,40 @@ const BASE_TOOLS = [
         },
       },
       required: ["name"],
+    },
+  },
+  {
+    /**
+     * The one tool that returns a DOCUMENT rather than a result set.
+     *
+     * "What did we work out this week" is not a search — it is a request for
+     * material to reason over, and a JSON array of memory objects is the wrong
+     * shape for that: most of its tokens go to ids and repeated field names, and
+     * it arrives with no structure. This returns markdown grouped by kind, which
+     * is the summary's outline before a model writes a word.
+     */
+    name: "digest",
+    description:
+      "Assemble every memory from a time window into one markdown document, grouped by kind — built for summarising rather than searching. Use this for “what happened today / this week”, and recall_memories when looking for something specific.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        window: {
+          type: "string",
+          description:
+            "today, yesterday, last_7days, last_2weeks, last_3weeks, last_1month, last_3months, last_6months, last_1year, or a month like 2026_08. Relative windows all run up to now.",
+        },
+        query: { type: "string", maxLength: 240 },
+        kind: KIND_ENUM,
+        ...SCOPE_PROPS,
+        excerpt: {
+          type: "integer",
+          minimum: 100,
+          description: "Trim each memory to this many characters. Omit for full text.",
+        },
+        limit: { type: "integer", minimum: 1, maximum: 200 },
+      },
+      required: ["window"],
     },
   },
   {
@@ -742,6 +792,31 @@ async function callTool(name: string, args: Record<string, any>) {
       return {
         ...text(`${target} is now ${enable ? "enabled" : "disabled"}.`),
         structuredContent: { name: target, enabled: enable },
+      };
+    }
+
+    case "digest": {
+      const digest = await buildDigest({
+        window: String(args.window ?? "today"),
+        query: args.query,
+        ...scopeFrom(args),
+        excerpt: args.excerpt,
+        limit: args.limit,
+      });
+      if (!digest) {
+        return toolError(
+          `Unknown window “${args.window}”. Use one of: ${digestWindows().join(", ")}, or a month like 2026_08.`,
+        );
+      }
+      return {
+        ...text(digest.markdown),
+        structuredContent: {
+          window: digest.window,
+          label: digest.label,
+          from: digest.fromIso,
+          count: digest.count,
+          byKind: digest.byKind,
+        },
       };
     }
 

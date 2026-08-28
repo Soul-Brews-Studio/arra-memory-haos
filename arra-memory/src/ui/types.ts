@@ -1,15 +1,14 @@
 /** Shared shapes between the API and the UI. Mirrors src/memory.ts. */
 
-export const MEMORY_KINDS = [
-  "note",
-  "decision",
-  "lesson",
-  "context",
-  "person",
-  "project",
-] as const;
+/**
+ * Kind is free text, matching workspace, project and tags.
+ *
+ * These four are what the compose form suggests, not what it permits — see
+ * SUGGESTED_KINDS in utils.ts for why the enum went away.
+ */
+export const SUGGESTED_KINDS = ["learn", "enlighten", "retro", "artifact"] as const;
 
-export type MemoryKind = (typeof MEMORY_KINDS)[number];
+export type MemoryKind = string;
 
 export interface Memory {
   id: string;
@@ -56,6 +55,33 @@ export interface AgentFacet {
   latest: string;
 }
 
+/** Every chip row, as /api/facets returns it in one request. */
+export interface Facets {
+  kinds: Array<{ kind: string; count: number }>;
+  workspaces: WorkspaceFacet[];
+  unassigned: number;
+  projects: ProjectFacet[];
+  agents: AgentFacet[];
+  tags: Array<{ tag: string; count: number }>;
+  total: number;
+}
+
+/**
+ * What the archive is narrowed to.
+ *
+ * Arrays, not strings: a chip row is multi-select, and "either of these
+ * workspaces" is one question rather than two searches a caller has to merge.
+ * Empty everywhere means the whole corpus, which is the default.
+ */
+export interface Scope {
+  kind: string[];
+  workspace: string[];
+  project: string[];
+  createdBy: string[];
+}
+
+export const EMPTY_SCOPE: Scope = { kind: [], workspace: [], project: [], createdBy: [] };
+
 export interface MemoryStats {
   total: number;
   kinds: Record<string, number>;
@@ -66,14 +92,6 @@ export interface MemoryStats {
 /** Which authentication proved the caller — surfaced so the UI can say so. */
 export type AuthMethod = "owner-session" | "api-token" | "oauth";
 
-export const KIND_COLOR: Record<MemoryKind, string> = {
-  note: "var(--color-kind-note)",
-  decision: "var(--color-kind-decision)",
-  lesson: "var(--color-kind-lesson)",
-  context: "var(--color-kind-context)",
-  person: "var(--color-kind-person)",
-  project: "var(--color-kind-project)",
-};
 
 export interface SearchLogEntry {
   id: string;
