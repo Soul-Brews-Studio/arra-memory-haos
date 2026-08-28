@@ -78,7 +78,24 @@ function originOf(request: Request): string {
   return `${proto}://${host}`;
 }
 
-const isSecure = (request: Request) => originOf(request).startsWith("https://");
+/**
+ * Whether THIS request arrived over TLS — not whether the add-on has a public
+ * HTTPS URL configured.
+ *
+ * These are different, and conflating them silently breaks login. `Secure` is
+ * derived from public_url once, and the browser then refuses to store the
+ * session cookie on every plain-http connection: the sidebar and the LAN port.
+ * The passphrase POST returns 200, no cookie is kept, and the UI stays on the
+ * lock screen with a correct passphrase — which reads as "wrong password".
+ *
+ * x-forwarded-proto is what a tunnel or ingress sets; the socket's own scheme
+ * is the fallback.
+ */
+const isSecure = (request: Request) => {
+  const forwarded = request.headers.get("x-forwarded-proto");
+  if (forwarded) return forwarded.split(",")[0]!.trim() === "https";
+  return new URL(request.url).protocol === "https:";
+};
 
 /**
  * CORS, for browser-based MCP clients and for any discovery a web app performs
