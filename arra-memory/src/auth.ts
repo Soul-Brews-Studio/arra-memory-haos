@@ -91,7 +91,14 @@ export function unauthorized(origin: string): Response {
       status: 401,
       headers: {
         "content-type": "application/json",
-        "www-authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+        // realm/error/error_description are what RFC 6750 defines for a 401,
+        // and the resource_metadata pointer is RFC 9728's discovery hook —
+        // suffixed with the resource path, which is where a client looks.
+        "www-authenticate":
+          `Bearer realm="OAuth", ` +
+          `resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp", ` +
+          `error="invalid_token", ` +
+          `error_description="Missing or invalid access token"`,
         // The 401 is the message that starts the whole OAuth dance, so its
         // headers must survive a cross-origin read like any other response.
         "access-control-allow-origin": "*",

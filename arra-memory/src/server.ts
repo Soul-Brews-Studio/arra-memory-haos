@@ -116,6 +116,16 @@ const methodNotAllowed = () =>
     { status: 405, headers: { "content-type": "application/json", allow: "POST", ...CORS_HEADERS } },
   );
 
+/** RFC 9728 metadata. `resource` is the MCP endpoint itself, not the origin. */
+function protectedResourceMetadata(origin: string) {
+  return {
+    resource: `${origin}/mcp`,
+    authorization_servers: [origin],
+    scopes_supported: ["memory:read", "memory:write"],
+    bearer_methods_supported: ["header"],
+  };
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -137,14 +147,18 @@ const app = new Elysia()
   .get("/.well-known/oauth-authorization-server", ({ request }) =>
     json(authorizationServerMetadata(originOf(request))),
   )
-  .get("/.well-known/oauth-protected-resource", ({ request }) => {
-    const origin = originOf(request);
-    return json({
-      resource: origin,
-      authorization_servers: [origin],
-      scopes_supported: ["memory:read", "memory:write"],
-    });
-  })
+  // RFC 9728 locates a protected resource's metadata by appending the
+  // resource's PATH to the well-known prefix. For an MCP endpoint at /mcp that
+  // is /.well-known/oauth-protected-resource/mcp — the bare path is the form
+  // for a resource at the origin root, and a client that follows the spec
+  // looks for the suffixed one. Both are served: the suffixed path because it
+  // is correct, the bare path because some clients ask for it anyway.
+  .get("/.well-known/oauth-protected-resource", ({ request }) =>
+    json(protectedResourceMetadata(originOf(request))),
+  )
+  .get("/.well-known/oauth-protected-resource/mcp", ({ request }) =>
+    json(protectedResourceMetadata(originOf(request))),
+  )
 
   // ── OAuth: dynamic client registration ─────────────────────────────────────
   .post("/oauth/register", async ({ request }) => {
