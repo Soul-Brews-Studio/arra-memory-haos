@@ -1,6 +1,9 @@
 node_modules/
-public/main.js
-public/app.css
+# Built UI assets. These were previously ignored as `public/main.js`, which is
+# repo-root relative and therefore never matched arra-memory/public/main.js —
+# so a stale bundle was committed and shipped in every clone.
+**/public/main.js
+**/public/app.css
 *.db
 *.db-*
 .env

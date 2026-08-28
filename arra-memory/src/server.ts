@@ -717,14 +717,45 @@ const app = new Elysia()
   .delete("/mcp", () => methodNotAllowed())
 
   // ── the UI ─────────────────────────────────────────────────────────────────
+  //
+  // main.js and app.css have stable filenames, so a browser that cached them
+  // keeps running the OLD app after an update — for as long as the cache says.
+  // Observed live: a deployed build containing a new panel, a browser executing
+  // the previous bundle, and the panel simply absent with nothing to see.
+  //
+  // The shell is therefore never cached and stamps the version onto each asset
+  // URL, so every release is a different URL and the old entry is simply never
+  // asked for again. The assets themselves keep a long cache precisely because
+  // their URL now changes when their content does.
   .get("/*", async ({ request }) => {
     const url = new URL(request.url);
     const path = url.pathname === "/" ? "/index.html" : url.pathname;
-    const file = Bun.file(`${PUBLIC_DIR}${path}`);
-    if (await file.exists()) return new Response(file);
-    // Single-page app: unknown paths render the shell and let the client route.
-    return new Response(Bun.file(`${PUBLIC_DIR}/index.html`), {
-      headers: { "content-type": "text/html; charset=utf-8" },
+
+    if (path !== "/index.html") {
+      const file = Bun.file(`${PUBLIC_DIR}${path}`);
+      if (await file.exists()) {
+        return new Response(file, {
+          headers: {
+            // Safe to cache hard: the shell only ever requests these with the
+            // current version in the query string.
+            "cache-control": "public, max-age=31536000, immutable",
+          },
+        });
+      }
+    }
+
+    const shell = await Bun.file(`${PUBLIC_DIR}/index.html`).text();
+    const stamped = shell
+      .replace('"./main.js"', `"./main.js?v=${VERSION}"`)
+      .replace('"./app.css"', `"./app.css?v=${VERSION}"`);
+
+    return new Response(stamped, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        // The one document that must always be re-fetched — it is what points
+        // at the current assets.
+        "cache-control": "no-store, must-revalidate",
+      },
     });
   });
 
