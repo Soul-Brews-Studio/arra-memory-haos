@@ -105,66 +105,85 @@ async function startReplica(): Promise<void> {
 }
 
 /**
- * Copies the standalone corpus into a freshly created replica, once.
+ * Copies the standalone database into a freshly created replica, table by table.
  *
- * Turning replication on must not look like losing every memory. The replica
- * starts from whatever Turso holds — nothing, the first time — so without this
- * the archive would open empty and the previous memories would appear deleted
- * while sitting untouched in a file next door.
+ * Turning replication on must not look like losing anything. The replica starts
+ * from whatever Turso holds — nothing, the first time — so without this the
+ * previous state appears deleted while sitting untouched in a file next door.
  *
- * Guarded on the replica being EMPTY, so it runs exactly once and can never
- * overwrite memories that arrived from another machine.
+ * EVERY table, not just `memories`. The first version of this copied the corpus
+ * and nothing else, which silently reset three things that are not the corpus
+ * and are not obviously part of it:
+ *
+ *   - `search_log`  — the entire history of what had been looked for
+ *   - `kv`          — which MCP tools the owner had switched off
+ *   - `oauth_*`     — the registered client and token for the claude.ai
+ *                     connector, i.e. the connector stops working
+ *
+ * Each table is guarded on ITSELF being empty rather than on the corpus being
+ * empty, so a replica that already has memories can still recover the tables
+ * that were missed — this heals a database that was seeded by the earlier,
+ * memories-only version on its next restart.
  */
+const SEEDED_TABLES = [
+  "memories",
+  "search_log",
+  "kv",
+  "oauth_clients",
+  "oauth_codes",
+  "oauth_tokens",
+] as const;
+
 async function seedReplica(): Promise<void> {
   if (!replicaActive) return;
+
+  let standalone: Client | null = null;
   try {
-    const mine = firstRow<{ n: number }>(await db().execute("SELECT COUNT(*) AS n FROM memories"));
-    if (Number(mine?.n ?? 0) > 0) return;
+    standalone = createClient({ url: localUrl() });
+  } catch {
+    return;
+  }
 
-    const standalone = createClient({ url: localUrl() });
-    let existing: MemoryImport[] = [];
-    try {
-      existing = rows<MemoryImport>(
-        await standalone.execute(
-          `SELECT id, title, content, kind, tags, source, importance,
-                  workspace, project, url, created_by, created_at, updated_at
-             FROM memories`,
-        ),
-      );
-    } catch {
-      // No standalone corpus to carry over — a first-ever install with sync
-      // already configured. Nothing to do, and not a failure.
-      return;
-    } finally {
-      standalone.close();
-    }
-    if (!existing.length) return;
+  try {
+    for (const table of SEEDED_TABLES) {
+      try {
+        // Only into an empty table. This is what makes the whole thing safe to
+        // run on every start, and what lets it fill in tables a previous
+        // version of this function never copied.
+        const mine = firstRow<{ n: number }>(
+          await db().execute(`SELECT COUNT(*) AS n FROM ${table}`),
+        );
+        if (Number(mine?.n ?? 0) > 0) continue;
 
-    for (const m of existing) {
-      await db().execute({
-        sql: MEMORIES.insert,
-        args: [
-          m.id, m.title, m.content, m.kind, m.tags, m.source, m.importance,
-          m.workspace ?? "", m.project ?? "", m.url ?? "", m.created_by ?? "",
-          m.created_at, m.updated_at,
-        ],
-      });
+        const source = await standalone.execute(`SELECT * FROM ${table}`);
+        const existing = source.rows as unknown as Array<Record<string, unknown>>;
+        if (!existing.length) continue;
+
+        // Columns come from the source result rather than a hard-coded list, so
+        // a column added later is carried across without editing this function
+        // — the failure mode being avoided is a seed that silently drops a
+        // field nobody remembered to add here.
+        const columns = source.columns;
+        const placeholders = columns.map(() => "?").join(", ");
+        const sql = `INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`;
+
+        for (const row of existing) {
+          await db().execute({ sql, args: columns.map((c) => row[c] as never) });
+        }
+        console.log(`[arra-memory] seeded ${existing.length} rows into ${table}`);
+      } catch (error) {
+        // One table failing must not abandon the rest — a missing table in an
+        // older standalone database is expected, not fatal.
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/no such table/i.test(message)) {
+          console.error(`[arra-memory] could not seed ${table}: ${message}`);
+        }
+      }
     }
     await (db() as Client & { sync?: () => Promise<unknown> }).sync?.();
-    console.log(`[arra-memory] seeded the replica with ${existing.length} existing memories`);
-  } catch (error) {
-    // A failed seed leaves an empty replica, which is recoverable; it must not
-    // stop the add-on serving.
-    console.error(
-      `[arra-memory] could not seed the replica: ${error instanceof Error ? error.message : error}`,
-    );
+  } finally {
+    standalone.close();
   }
-}
-
-interface MemoryImport {
-  id: string; title: string; content: string; kind: string; tags: string;
-  source: string; importance: number; workspace: string | null; project: string | null;
-  url: string | null; created_by: string | null; created_at: string; updated_at: string;
 }
 
 /**

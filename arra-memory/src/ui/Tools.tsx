@@ -38,11 +38,10 @@ export function Tools({ onClose, nav }: { onClose: () => void; nav?: React.React
     void load();
   }, [load]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Escape is handled by <Panel>, which yields while a dialog is open.
+  // This page used to register its own copy without that guard, so one
+  // Escape dismissed the compose form AND navigated the page out from
+  // under it — two window listeners for one key, and the unguarded one won.
 
   const toggle = async (tool: ToolInfo) => {
     // Optimistic, and reverted on failure — the server refuses some of these

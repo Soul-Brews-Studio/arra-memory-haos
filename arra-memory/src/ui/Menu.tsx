@@ -11,23 +11,40 @@ import { useEffect } from "react";
  * The primary action stays visually distinct from navigation — writing a memory
  * is what the page is for, and it should not look like a peer of "Search log".
  */
+export interface NavItem {
+  label: string;
+  title?: string;
+  danger?: boolean;
+  /** Marks the view currently on screen, so the bar reads as navigation. */
+  active?: boolean;
+  /**
+   * Where this sits in the bar. Lower is further left; ties keep source order.
+   *
+   * Explicit weights rather than array position, so adding a destination is
+   * choosing a number instead of finding the right line to insert at — and so
+   * the order is stated once where the item is defined rather than implied by
+   * how the array happens to be written. Leave gaps (10, 20, 30) so something
+   * can land between two existing entries without renumbering anything.
+   */
+  weight?: number;
+  onSelect: () => void;
+}
+
 export function NavBar({
   primary,
   items,
 }: {
   primary?: { label: string; onSelect: () => void };
-  items: Array<{
-    label: string;
-    title?: string;
-    danger?: boolean;
-    /** Marks the view currently on screen, so the bar reads as navigation. */
-    active?: boolean;
-    onSelect: () => void;
-  }>;
+  items: NavItem[];
 }) {
+  // Sorted here, not by the caller, so every bar in the app orders the same way.
+  // Unweighted items default to 50 and fall in the middle rather than jumping to
+  // the front, which is what an unset number would do if it defaulted to 0.
+  const ordered = [...items].sort((a, b) => (a.weight ?? 50) - (b.weight ?? 50));
+
   return (
     <nav className="flex flex-wrap items-center gap-1.5" aria-label="Archive">
-      {items.map((item) => (
+      {ordered.map((item) => (
         <button
           key={item.label}
           type="button"

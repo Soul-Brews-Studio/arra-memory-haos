@@ -49,7 +49,18 @@ export default function App() {
     project: route.project,
     createdBy: route.createdBy,
   };
-  const setView = (next: View) => navigate({ ...route, view: next });
+  /**
+   * Changing view drops the archive's own state.
+   *
+   * Carrying `q` and the scope onto Settings put them in the URL of a page that
+   * ignores them — and worse, it meant the query never *changed*: replaying
+   * "Trigram" from the search log navigated to a query the route was already
+   * holding, so the load effect never refired, no search ran, and nothing was
+   * recorded. A filter that survives leaving the thing it filters is not state,
+   * it is a leak. Back still returns to the filtered archive.
+   */
+  const setView = (next: View) =>
+    navigate(next === "archive" ? { ...route, view: next } : { ...EMPTY_ROUTE, view: next });
   const setQuery = (next: string) => navigate({ ...route, query: next });
   const setKind = (next: MemoryKind | "") => navigate({ ...route, kind: next });
   const setScope = (next: Scope) => navigate({ ...route, ...next });
@@ -126,31 +137,46 @@ export default function App() {
     <NavBar
       primary={{ label: "Remember", onSelect: () => setComposing(true) }}
       items={[
-        { label: "Archive", active: view === "archive", onSelect: () => setView("archive") },
+        // Weights, not array order — see NavItem. Gaps of 10 leave room to
+        // add a destination between two existing ones without renumbering.
         {
-          label: "Workspaces",
-          title: "How the corpus is divided, and who writes to each part",
-          active: view === "workspaces",
-          onSelect: () => setView("workspaces"),
+          label: "Archive",
+          weight: 10,
+          active: view === "archive",
+          onSelect: () => setView("archive"),
         },
-        {
-          label: "Tools",
-          title: "Which MCP tools this connector offers, and what to switch off",
-          active: view === "tools",
-          onSelect: () => setView("tools"),
-        },
+        // Workspaces is deliberately NOT a nav destination.
+        //
+        // It was one, briefly. A workspace answers "which subset of what I am
+        // looking at", which makes it a filter — and a filter promoted to a
+        // destination costs a click on every use and splits one question across
+        // two screens: the page showed structure, the archive showed memories,
+        // and neither showed both. The scope bar above the list does the job in
+        // one click, and `#/workspaces` still resolves for anything that linked
+        // to it.
         ...(health?.features.searchLog
           ? [{
               label: "Search log",
               title: "What has been looked for",
+              weight: 30,
               active: view === "log",
               onSelect: () => setView("log"),
             }]
           : []),
+        // Configuration lives at the end, where configuration belongs — you
+        // pass the things you use daily to reach the thing you set once.
+        {
+          label: "Settings",
+          title: "Which MCP tools this connector offers, and what to switch off",
+          weight: 90,
+          active: view === "settings",
+          onSelect: () => setView("settings"),
+        },
         {
           label: "Lock",
           title: "End this session",
           danger: true,
+          weight: 100,
           onSelect: () =>
             void api.session.close().finally(() => {
               setPhase("locked");
@@ -176,7 +202,7 @@ export default function App() {
           navigate({ ...EMPTY_ROUTE, view: "archive", ...next });
         }}
       />
-    ) : view === "tools" ? (
+    ) : view === "settings" ? (
       <Tools onClose={() => setView("archive")} nav={nav} />
     ) : view === "log" ? (
       <SearchLog

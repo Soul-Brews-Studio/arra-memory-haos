@@ -23,9 +23,18 @@ import type { MemoryKind } from "./types";
  * link — is not a cost for an app that is a single bundle behind a passphrase.
  */
 
-export type View = "archive" | "workspaces" | "tools" | "log";
+export type View = "archive" | "workspaces" | "settings" | "log";
 
-const VIEWS: View[] = ["archive", "workspaces", "tools", "log"];
+const VIEWS: View[] = ["archive", "workspaces", "settings", "log"];
+
+/**
+ * Renamed destinations, old name → new.
+ *
+ * `#/tools` was a real URL people could have bookmarked or linked to before
+ * the tool surface moved under Settings. Silently landing them on the archive
+ * would look like the page had been deleted, so the old name keeps working.
+ */
+const ALIASES: Record<string, View> = { tools: "settings" };
 
 export interface Route {
   view: View;
@@ -52,7 +61,9 @@ export function parseRoute(hash: string): Route {
   const raw = hash.replace(/^#\/?/, "");
   const [path, search] = raw.split("?");
   const params = new URLSearchParams(search ?? "");
-  const view = VIEWS.includes(path as View) ? (path as View) : "archive";
+  const view = VIEWS.includes(path as View)
+    ? (path as View)
+    : (ALIASES[path ?? ""] ?? "archive");
 
   return {
     view,
