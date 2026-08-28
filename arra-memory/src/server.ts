@@ -132,6 +132,26 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json", ...CORS_HEADERS },
   });
 
+/**
+ * A ring buffer of recent /mcp exchanges.
+ *
+ * claude.ai calls this server from its own backend, so nothing about that
+ * request is visible from a browser, and Supervisor's add-on log endpoint
+ * returns an empty string on this HAOS build. Without this there is no way to
+ * see what a remote client actually sent — which is how three separate silent
+ * failures survived as long as they did.
+ *
+ * Bodies are recorded truncated and the Authorization header is never stored,
+ * only whether one was present and which scheme it used.
+ */
+const MCP_LOG_SIZE = 25;
+const mcpLog: Array<Record<string, unknown>> = [];
+
+function recordMcp(entry: Record<string, unknown>) {
+  mcpLog.unshift({ at: new Date().toISOString(), ...entry });
+  if (mcpLog.length > MCP_LOG_SIZE) mcpLog.length = MCP_LOG_SIZE;
+}
+
 const app = new Elysia()
 
   // Preflight for every path. Registered first so the SPA catch-all can never
@@ -469,6 +489,13 @@ const app = new Elysia()
     return json({ indexed: await backfillEmbeddings(body.limit ?? 50) });
   })
 
+  // What remote clients actually sent. Authenticated; see recordMcp above.
+  .get("/api/debug/mcp-log", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    return json({ entries: mcpLog });
+  })
+
   .get("/api/stats", async ({ request }) => {
     const auth = await authenticate(request, config);
     if (!auth.ok) return unauthorized(originOf(request));
@@ -478,13 +505,31 @@ const app = new Elysia()
 
   // ── MCP ────────────────────────────────────────────────────────────────────
   .post("/mcp", async ({ request }) => {
+    const headers = Object.fromEntries(
+      [...request.headers.entries()].filter(([k]) => k !== "authorization" && k !== "cookie"),
+    );
+    const authHeader = request.headers.get("authorization");
+
     const auth = await authenticate(request, config);
-    if (!auth.ok) return unauthorized(originOf(request));
+    if (!auth.ok) {
+      recordMcp({ outcome: "401", authPresented: authHeader ? authHeader.split(" ")[0] : null, headers });
+      return unauthorized(originOf(request));
+    }
 
     let body: JsonRpcRequest;
     try {
       body = (await request.json()) as JsonRpcRequest;
+      recordMcp({
+        outcome: "ok",
+        method: body.method,
+        authMethod: auth.method,
+        accept: request.headers.get("accept"),
+        protocolVersion: (body as any)?.params?.protocolVersion,
+        clientInfo: (body as any)?.params?.clientInfo,
+        headers,
+      });
     } catch {
+      recordMcp({ outcome: "parse-error", headers });
       return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
     }
 
