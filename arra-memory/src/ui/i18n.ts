@@ -150,7 +150,11 @@ const STRINGS = {
   "facet.agent": { th: "ใครเขียน", en: "agent" },
   "facet.tag": { th: "แท็ก", en: "tag" },
   "facet.unfiled": { th: "ไม่ระบุ", en: "unfiled" },
-  "facet.more": { th: "อีก", en: "more" },
+  // {n} sits INSIDE the translation because word order is part of the
+  // translation: Thai puts the quantifier first ("อีก 5"), English puts it
+  // after the number ("+5 more"). Composing the phrase in the component would
+  // hard-code English order and render the Thai backwards, which it did.
+  "facet.more": { th: "อีก {n}", en: "+{n} more" },
   "facet.less": { th: "ย่อ", en: "less" },
 
   // ── empty states

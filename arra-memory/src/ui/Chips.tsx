@@ -240,7 +240,7 @@ function WideRow({
           >
             <span>
               <span className="facet-more-marker">▸</span>
-              {open ? t("facet.less") : `+${tail.length} ${t("facet.more")}`}
+              {open ? t("facet.less") : t("facet.more").replace("{n}", String(tail.length))}
             </span>
             {/* The hidden COUNT, in the count column — so the price of leaving
                 it folded is legible without opening it. */}
