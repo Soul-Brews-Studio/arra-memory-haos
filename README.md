@@ -39,19 +39,78 @@ mechanism serves them all.
 | Method | Who uses it | How |
 |---|---|---|
 | Session cookie | The web UI | Passphrase → HMAC-signed cookie, 12h, revocable |
-| Static bearer | curl, scripts, Claude Code, Codex | `Authorization: Bearer <api_token>` |
-| OAuth 2.1 + PKCE | **claude.ai connectors** | Dynamic registration, then an approval page |
+| Static bearer | curl, scripts, cron, anything headless | `Authorization: Bearer <api_token>` |
+| OAuth 2.1 + PKCE | **claude.ai**, and Claude Code / Codex if you prefer it | Dynamic registration, then an approval page |
 
-claude.ai cannot send a static header at all — OAuth is the only door open to
-it, and that is the entire reason this add-on ships an authorization server.
+claude.ai cannot send a static header at all, so OAuth is the only door open to
+it — that is why this add-on ships an authorization server. But the CLI clients
+can use either, and OAuth is the better default wherever a browser is reachable:
+nothing long-lived ends up in a config file or an environment variable, the grant
+is scoped, and it is revocable server-side without touching the client.
 
-### Connect Claude Code or Codex
+Reach for a static token when there is no browser — cron, a headless box, a
+container.
+
+### The OAuth surface
+
+| | |
+|---|---|
+| `/.well-known/oauth-authorization-server` | issuer, endpoints, `S256`, `authorization_code` |
+| `/.well-known/oauth-protected-resource` | resource `<base>/mcp`, scopes `memory:read` `memory:write` |
+| `/oauth/register` | Dynamic Client Registration — clients enrol themselves |
+| `/authorize` · `/oauth/token` | approval page, then the code exchange |
+
+**`issuer` must equal `public_url` exactly.** Clients compare the two and refuse
+on any mismatch — which is why blanking `public_url` (see the wholesale-replace
+warning under Configuration) breaks every OAuth client at once while leaving the
+static-token path working, a confusing pair of symptoms.
+
+### Connect Claude Code
 
 ```bash
-claude mcp add --transport http arra-memory http://homeassistant.local:8099/mcp \
-  --header "Authorization: Bearer <api_token>"
+# OAuth — nothing secret is stored in your config
+claude mcp add arra-memory https://your-host/mcp --transport http -s user
+claude mcp login arra-memory          # --no-browser for SSH/headless
 
-codex mcp add arra-memory --url http://homeassistant.local:8099/mcp
+# or a static token
+claude mcp add arra-memory https://your-host/mcp --transport http -s user \
+  --header "Authorization: Bearer <api_token>"
+```
+
+⚠️ **Put the positional arguments before `--header`.** It is variadic, so placed
+first it swallows the name and URL and you get `error: missing required argument
+'name'` even though you supplied both.
+
+`claude mcp get arra-memory` reports `! Needs authentication` until the login
+completes; that is the expected intermediate state, not a failure.
+
+### Connect Codex
+
+```bash
+# OAuth
+codex mcp add arra-memory --url https://your-host/mcp
+codex mcp login arra-memory --scopes memory:read,memory:write \
+  --oauth-client-registration dcr
+
+# or a static token — note this stores the variable's NAME, not the value
+codex mcp add arra-memory --url https://your-host/mcp \
+  --bearer-token-env-var ARRA_TOKEN
+```
+
+⚠️ `--bearer-token-env-var` wants the **name of an environment variable**, not the
+token. Pasting the token there produces `Environment variable <the-token-itself>
+… is not set`, which is a confusing way to be told you supplied the wrong thing.
+
+⚠️ If you export that variable from `~/.zshrc`, Codex will not see it: zsh sources
+`.zshrc` only for **interactive** shells, and Codex starts its MCP clients from
+one that is not. The symptom is `Environment variable … is not set` while the
+same variable resolves perfectly in your terminal. Use `~/.zshenv`, and guard it
+so every shell spawn does not pay for the lookup:
+
+```bash
+if [ -z "${ARRA_TOKEN:-}" ]; then
+  export ARRA_TOKEN="$(pass show path/to/token 2>/dev/null)"
+fi
 ```
 
 ### Connect claude.ai
@@ -59,9 +118,52 @@ codex mcp add arra-memory --url http://homeassistant.local:8099/mcp
 claude.ai needs a public HTTPS URL — it cannot reach a LAN or VPN address, and it
 cannot send a static bearer header. Publish the add-on through a Cloudflare
 Tunnel (which dials outward and opens no inbound port), set `public_url` to that
-hostname, then in **Settings → Connectors → Add custom connector** paste
-`https://your-host/mcp`. Approve with your owner passphrase on the page that
-appears.
+hostname, then in **Settings → Customize → Connectors → Add custom connector**
+paste `https://your-host/mcp`. Approve with your owner passphrase on the page
+that appears.
+
+Step 2 of that form should read **"Authentication: Always required — Detected"**.
+That word *Detected* means claude.ai successfully fetched the discovery documents
+above. If it says anything else, the server side is wrong and no amount of
+clicking will fix it.
+
+### Verifying a connection, and what does not count
+
+A client printing `Successfully logged in` is **not** proof. It can appear with
+no visible browser step at all — if that browser already holds an owner session,
+the approval page redirects immediately and the flow completes silently. It
+really did work in that case, but the message alone cannot tell you so.
+
+Four checks that do settle it:
+
+```bash
+# 1. discovery is public and the issuer matches
+curl -s https://your-host/.well-known/oauth-authorization-server
+
+# 2. an unauthenticated call is refused
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://your-host/mcp     # 401
+
+# 3. a real initialize succeeds with your credential
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://your-host/mcp \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}'
+
+# 4. call a tool through the client itself
+```
+
+Check 2 matters as much as check 3: a 200 proves the server is reachable, not
+that anything is being enforced.
+
+Two things that look like auth failures and are not:
+
+- **Codex storing nothing in `~/.codex/auth.json`.** OAuth credentials go to the
+  OS keyring (on macOS, the login keychain, under `<server-name>|<hash>`).
+  Grepping `auth.json` finds nothing and looks exactly like a failed login.
+- **`MCP tool call requires approval, but approval policy is never`.** That is
+  the client's own approval gate. The give-away is that the log still shows
+  `mcp: <server>/<tool> started` — the server connected and listed its tools
+  fine.
 
 ## Reaching it
 
