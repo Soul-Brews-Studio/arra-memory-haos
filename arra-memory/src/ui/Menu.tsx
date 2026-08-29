@@ -34,6 +34,7 @@ export function NavBar({
   items,
   lang,
   themes,
+  session,
 }: {
   items: NavItem[];
   /**
