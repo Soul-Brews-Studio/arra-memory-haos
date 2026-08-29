@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { Panel } from "./Menu";
+import { Appearance } from "./Appearance";
 import { t } from "./i18n";
 import type { SettingsInfo, SettingField } from "./types";
 
@@ -106,6 +107,11 @@ export function Settings({ onClose, nav }: { onClose: () => void; nav?: React.Re
         // names the place that CAN change these.
         <p className="note warn">{info.reason}</p>
       )}
+
+      {/* Appearance lives HERE, not with the tools. It moved to the tool page
+          by accident in 0.24.0 when Settings became the options form — a theme
+          is something you set, not a tool you expose to a client. */}
+      <Appearance />
 
       <div className="settings-form">
         {info?.settings.map((f) => (

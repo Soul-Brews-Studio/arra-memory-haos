@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { Panel } from "./Menu";
-import { Appearance } from "./Appearance";
 import { t } from "./i18n";
 import type { ToolInfo } from "./types";
 
@@ -66,7 +65,7 @@ export function Tools({ onClose, nav }: { onClose: () => void; nav?: React.React
 
   return (
     <Panel
-      eyebrow={t("nav.settings")}
+      eyebrow={t("nav.tools")}
       title={`${tools.length} tools${offCount ? `, ${offCount} off` : ""}`}
       subtitle="A tool that is off is hidden from clients and refused if called anyway. Nothing is deleted — switch it back on and it returns."
       onClose={onClose}
@@ -88,7 +87,6 @@ export function Tools({ onClose, nav }: { onClose: () => void; nav?: React.React
       }
     >
       <>
-        <Appearance />
 
 
           {error && (
