@@ -17,6 +17,7 @@ OLLAMA_URL="$(bashio::config 'ollama_url')"
 EMBEDDING_MODEL="$(bashio::config 'embedding_model')"
 EMBEDDING_DIMENSIONS="$(bashio::config 'embedding_dimensions')"
 SEARCH_LOG="$(bashio::config 'search_log')"
+GENERATED_TOOLS="$(bashio::config 'generated_tools')"
 LANGUAGE="$(bashio::config 'language')"
 THEME="$(bashio::config 'theme')"
 TURSO_SYNC_URL="$(bashio::config 'turso_sync_url')"
@@ -33,6 +34,7 @@ TURSO_SYNC_INTERVAL="$(bashio::config 'turso_sync_interval')"
 [ "${EMBEDDING_MODEL}" = "null" ] && EMBEDDING_MODEL="bge-m3"
 [ "${EMBEDDING_DIMENSIONS}" = "null" ] && EMBEDDING_DIMENSIONS="1024"
 [ "${SEARCH_LOG}" = "null" ] && SEARCH_LOG="false"
+[ "${GENERATED_TOOLS}" = "null" ] && GENERATED_TOOLS="false"
 [ "${TURSO_SYNC_URL}" = "null" ] && TURSO_SYNC_URL=""
 [ "${TURSO_AUTH_TOKEN}" = "null" ] && TURSO_AUTH_TOKEN=""
 [ "${TURSO_SYNC_INTERVAL}" = "null" ] && TURSO_SYNC_INTERVAL="60"
@@ -56,6 +58,7 @@ export INSTANCE_NAME
 export OLLAMA_URL
 export EMBEDDING_MODEL
 export EMBEDDING_DIMENSIONS
+export GENERATED_TOOLS
 export SEARCH_LOG
 export LANGUAGE
 export THEME

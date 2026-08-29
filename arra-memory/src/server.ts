@@ -222,8 +222,8 @@ const app = new Elysia()
     // because the UI fetches that before unlocking — the lock screen itself
     // should already be in the right language, and it has nothing else to ask.
     defaults: {
-      language: (process.env.LANGUAGE || "th").trim(),
-      theme: (process.env.THEME || "slate").trim(),
+      language: setting("language") || "th",
+      theme: setting("theme") || "slate",
     },
     // What is switched on, without revealing any of it. Enough to tell a
     // misconfigured deploy from a broken one at a glance.

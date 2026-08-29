@@ -15,6 +15,7 @@ import {
   updateMemory,
   type Memory,
 } from "./memory";
+import { setting } from "./config";
 import { VERSION } from "./version";
 import { INSTANCE_NAME } from "./identity";
 import { buildDigest, digestWindows } from "./digest";
@@ -465,6 +466,43 @@ const BASE_TOOLS = [
  * and a client is entitled to treat that as malformed.
  */
 async function buildToolList() {
+  // Generated tools are OFF by default since 0.25.0, and the reason is a
+  // measurement rather than a preference. On a real corpus they were 18 of 34
+  // tools and 4,328 of 7,133 tokens — 61% of what every MCP client carries in
+  // context on every single request.
+  //
+  // They are also strictly redundant. `recall_project_X` is
+  // `recall_memories({project: "X"})`; `search_last_7days` is
+  // `search_memories_between({from, to})`. Nothing becomes impossible when
+  // they are off.
+  //
+  // What is genuinely lost is DISCOVERY — a model could read the archive's
+  // shape out of the tool list instead of guessing project names. That job is
+  // done by `list_projects` and `list_workspaces`, which are always on, cost a
+  // few dozen tokens between them, and answer it on demand rather than in
+  // every request forever.
+  //
+  // Turn them back on with the `generated_tools` option when the trade is
+  // worth it — a small corpus, or a client where the affordance matters more
+  // than the context.
+  if (setting("generated_tools").toLowerCase() !== "true") {
+    const off = await disabledTools();
+    return {
+      tools: BASE_TOOLS.filter((t: any) => !off.has(t.name)),
+      generated: [] as Array<Record<string, unknown>>,
+      // The catalog must still list every base tool with its state, or the
+      // settings page would render an empty list and look broken.
+      catalog: BASE_TOOLS.map((t: any) => ({
+        name: t.name,
+        description: t.description,
+        generated: false,
+        project: null,
+        destructive: Boolean(t.annotations?.destructiveHint),
+        disabled: off.has(t.name),
+      })),
+    };
+  }
+
   const [projects, months] = await Promise.all([
     listProjects(MAX_GENERATED_TOOLS * 2),
     listMonths(MAX_MONTH_TOOLS),

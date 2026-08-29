@@ -54,6 +54,7 @@ export const SETTING_KEYS = [
   "embedding_model",
   "embedding_dimensions",
   "search_log",
+  "generated_tools",
   "language",
   "theme",
   "turso_sync_url",
@@ -70,8 +71,34 @@ export const SECRET_KEYS = new Set<SettingKey>([
   "turso_auth_token",
 ]);
 
-/** Only take effect at start, so a UI can say so rather than implying live. */
-export const RESTART_REQUIRED = new Set<SettingKey>(SETTING_KEYS);
+/**
+ * Only the settings that are genuinely stale until the process restarts.
+ *
+ * Marking everything was over-broad and actively misleading: five of these
+ * are read on every request and take effect the moment they are saved, and
+ * telling someone to restart for a change that already happened teaches them
+ * to distrust the label on the ones that need it.
+ *
+ * These are here because something reads them ONCE, at module load:
+ *   owner_passphrase, api_token   → the auth config object in server.ts
+ *   instance_name                 → the INSTANCE_NAME constant
+ *   ollama_url, embedding_*       → the embedding provider is resolved and cached
+ *   turso_*                       → the database client is built at startup
+ *
+ * Live by contrast: public_url and language/theme are read per request,
+ * search_log per call, and generated_tools every time the tool list is built.
+ */
+export const RESTART_REQUIRED = new Set<SettingKey>([
+  "owner_passphrase",
+  "api_token",
+  "instance_name",
+  "ollama_url",
+  "embedding_model",
+  "embedding_dimensions",
+  "turso_sync_url",
+  "turso_auth_token",
+  "turso_sync_interval",
+]);
 
 let fileSettings: Partial<Record<SettingKey, string>> = {};
 
@@ -97,6 +124,7 @@ const ENV_OF: Record<SettingKey, string> = {
   embedding_model: "EMBEDDING_MODEL",
   embedding_dimensions: "EMBEDDING_DIMENSIONS",
   search_log: "SEARCH_LOG",
+  generated_tools: "GENERATED_TOOLS",
   language: "LANGUAGE",
   theme: "THEME",
   turso_sync_url: "TURSO_SYNC_URL",
