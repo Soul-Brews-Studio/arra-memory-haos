@@ -59,6 +59,27 @@ const STRINGS = {
   },
   "settings.restart": { th: "ต้องรีสตาร์ท", en: "restart required" },
   "settings.readonly": { th: "อ่านอย่างเดียว", en: "read-only" },
+  "settings.regen": { th: "สร้างใหม่", en: "regenerate" },
+  "settings.regen.title": {
+    th: "สร้าง api_token ใหม่ — ตัวเก่าใช้ได้จนกว่าจะรีสตาร์ท",
+    en: "Generate a new api_token — the old one keeps working until restart",
+  },
+  "settings.regen.confirm": {
+    th: "สร้าง api_token ใหม่? ทุก client ที่ใช้ตัวเก่าจะหลุดหลังรีสตาร์ท",
+    en: "Generate a new api_token? Every client using the old one breaks after restart.",
+  },
+  "access.title": { th: "ใครเข้าถึงได้", en: "Who has access" },
+  "access.subtitle": {
+    th: "OAuth clients ที่เคยเชื่อมต่อ — เพิกถอนได้ทันที มีผลกับ request ถัดไป",
+    en: "OAuth clients that have connected — revoking takes effect on their next request",
+  },
+  "access.revoke": { th: "เพิกถอน", en: "revoke" },
+  "access.revoke.confirm": {
+    th: "เพิกถอน client นี้? มันต้อง authorize ใหม่จึงจะกลับมาใช้ได้",
+    en: "Revoke this client? It must authorize again to regain access.",
+  },
+  "access.tokens": { th: "โทเคนที่ยังมีผล", en: "active tokens" },
+  "access.none": { th: "ยังไม่มี client เชื่อมต่อผ่าน OAuth", en: "No OAuth client has connected yet" },
   "settings.source.environment": { th: "จาก environment", en: "from environment" },
   "settings.source.settings": { th: "จากไฟล์ตั้งค่า", en: "from settings file" },
   "settings.source.unset": { th: "ยังไม่ตั้ง", en: "not set" },

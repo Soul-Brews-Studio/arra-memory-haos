@@ -606,6 +606,21 @@ export const OAUTH = {
                 AND (expires_at IS NULL OR expires_at > ?)`,
     //                                        args: token
     revoke: `DELETE FROM oauth_tokens WHERE token = ?`,
+    // Who holds access right now: one row per client, with its live-token
+    // count. LEFT JOIN so a registered client with no surviving tokens still
+    // appears — "connected once, nothing active" is information.
+    clients: `SELECT c.client_id, c.client_name, c.created_at,
+                     COUNT(t.token)   AS active_tokens,
+                     MAX(t.created_at) AS last_token_at,
+                     MAX(t.scope)      AS scope
+                FROM oauth_clients c
+                LEFT JOIN oauth_tokens t
+                  ON t.client_id = c.client_id
+                 AND (t.expires_at IS NULL OR t.expires_at > ?)
+               GROUP BY c.client_id
+               ORDER BY c.created_at DESC`,
+    revokeClientTokens: `DELETE FROM oauth_tokens WHERE client_id = ?`,
+    revokeClientCodes:  `DELETE FROM oauth_codes  WHERE client_id = ?`,
     // args: nowSeconds
     sweep: `DELETE FROM oauth_tokens
              WHERE expires_at IS NOT NULL AND expires_at <= ?`,

@@ -239,3 +239,34 @@ export async function sweepExpired(): Promise<void> {
     "write",
   );
 }
+
+/** Every registered client with its live-token count — the "who has access" view. */
+export async function listClients(): Promise<
+  Array<{
+    clientId: string; clientName: string | null; createdAt: string;
+    activeTokens: number; lastTokenAt: string | null; scope: string | null;
+  }>
+> {
+  const rows = await db().execute({ sql: OAUTH.tokens.clients, args: [nowSeconds()] });
+  return rows.rows.map((r: any) => ({
+    clientId: String(r.client_id),
+    clientName: r.client_name ? String(r.client_name) : null,
+    createdAt: String(r.created_at),
+    activeTokens: Number(r.active_tokens ?? 0),
+    lastTokenAt: r.last_token_at ? String(r.last_token_at) : null,
+    scope: r.scope ? String(r.scope) : null,
+  }));
+}
+
+/**
+ * Revoke everything a client holds — tokens and any pending codes.
+ *
+ * The registration row deliberately survives: it is the record that this
+ * client existed, and the next connect re-authorizes without re-registering.
+ * The effect is immediate because verifyBearer reads the tokens table on
+ * every request; there is no cache to wait out.
+ */
+export async function revokeClient(clientId: string): Promise<void> {
+  await db().execute({ sql: OAUTH.tokens.revokeClientTokens, args: [clientId] });
+  await db().execute({ sql: OAUTH.tokens.revokeClientCodes, args: [clientId] });
+}

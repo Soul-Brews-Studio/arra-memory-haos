@@ -31,6 +31,11 @@ export function ServerOptions() {
   const [info, setInfo] = useState<SettingsInfo | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
+  const [revealValues, setRevealValues] = useState<Record<string, string>>({});
+  const [clients, setClients] = useState<
+    Array<{ clientId: string; clientName: string | null; createdAt: string;
+      activeTokens: number; lastTokenAt: string | null; scope: string | null }> | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -49,6 +54,42 @@ export function ServerOptions() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void api.access.clients().then((r) => setClients(r.clients)).catch(() => setClients([]));
+  }, []);
+
+  async function toggleReveal(key: string) {
+    const opening = !reveal[key];
+    // Fetched at the moment of asking, never sooner: the secret is not in the
+    // page, the props, or the state until the owner clicks.
+    if (opening && !(key in revealValues)) {
+      try {
+        const r = await api.settings.reveal(key);
+        setRevealValues((v) => ({ ...v, [key]: r.value }));
+      } catch { return; }
+    }
+    setReveal((r) => ({ ...r, [key]: opening }));
+  }
+
+  async function regenerate() {
+    if (!confirm(t("settings.regen.confirm"))) return;
+    try {
+      const r = await api.settings.regenerate("api_token");
+      setRevealValues((v) => ({ ...v, api_token: r.value }));
+      setReveal((x) => ({ ...x, api_token: true }));
+      setNote(t("settings.regen.title"));
+      setInfo(await api.settings.get());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not regenerate.");
+    }
+  }
+
+  async function revoke(id: string) {
+    if (!confirm(t("access.revoke.confirm"))) return;
+    await api.access.revoke(id).catch(() => {});
+    const r = await api.access.clients().catch(() => ({ clients: [] }));
+    setClients(r.clients);
+  }
 
   const dirty = Object.keys(draft).length > 0;
 
@@ -109,6 +150,29 @@ export function ServerOptions() {
         </div>
       )}
 
+      <div className="access-block">
+        <h4>{t("access.title")}</h4>
+        <p className="meta">{t("access.subtitle")}</p>
+        {clients === null ? null : clients.length === 0 ? (
+          <p className="meta">{t("access.none")}</p>
+        ) : (
+          <ul className="access-list">
+            {clients.map((c) => (
+              <li key={c.clientId}>
+                <span className="mono">{c.clientName || c.clientId.slice(0, 12) + "…"}</span>
+                <span className="meta">
+                  {c.activeTokens} {t("access.tokens")}
+                  {c.scope ? ` · ${c.scope}` : ""} · {c.createdAt.slice(0, 10)}
+                </span>
+                <button className="btn ghost tiny" onClick={() => void revoke(c.clientId)}>
+                  {t("access.revoke")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="settings-form">
         {info?.settings.map((f) => (
           <Field
@@ -117,8 +181,10 @@ export function ServerOptions() {
             editable={Boolean(info.writable) && !f.pinnedByEnv}
             value={draft[f.key] ?? (f.secret ? "" : f.value)}
             revealed={Boolean(reveal[f.key])}
-            onReveal={() => setReveal((r) => ({ ...r, [f.key]: !r[f.key] }))}
+            revealedValue={revealValues[f.key]}
+            onReveal={() => void toggleReveal(f.key)}
             onChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))}
+            onRegenerate={f.key === "api_token" && info.writable && !f.pinnedByEnv ? regenerate : undefined}
             dirty={f.key in draft}
           />
         ))}
@@ -128,14 +194,17 @@ export function ServerOptions() {
 }
 
 function Field({
-  field, editable, value, revealed, onReveal, onChange, dirty,
+  field, editable, value, revealed, revealedValue, onReveal, onChange, onRegenerate, dirty,
 }: {
   field: SettingField;
   editable: boolean;
   value: string;
   revealed: boolean;
+  /** The actual secret, fetched on demand — only ever present after reveal. */
+  revealedValue?: string;
   onReveal: () => void;
   onChange: (v: string) => void;
+  onRegenerate?: () => void;
   dirty: boolean;
 }) {
   const set = field.value !== "";
@@ -153,7 +222,7 @@ function Field({
       <span className="setting-input">
         <input
           type={field.secret && !revealed ? "password" : "text"}
-          value={value}
+          value={field.secret && revealed && !dirty ? (revealedValue ?? "") : value}
           disabled={!editable}
           spellCheck={false}
           autoComplete="off"
@@ -162,9 +231,19 @@ function Field({
           placeholder={field.secret ? (set ? field.value : t("settings.unset")) : t("settings.unset")}
           onChange={(e) => onChange(e.currentTarget.value)}
         />
-        {field.secret && editable && (
+        {field.secret && (
+          // Reveal fetches the stored value from the server on demand — the
+          // secret is never in the page until the owner asks for it. Shown for
+          // read-only installs too: reading the token back is the whole reason
+          // to open this row.
           <button type="button" className="btn ghost tiny" onClick={onReveal}>
             {revealed ? t("settings.hide") : t("settings.show")}
+          </button>
+        )}
+        {onRegenerate && (
+          <button type="button" className="btn ghost tiny" onClick={onRegenerate}
+                  title={t("settings.regen.title")}>
+            {t("settings.regen")}
           </button>
         )}
       </span>

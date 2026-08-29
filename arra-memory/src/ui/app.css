@@ -361,3 +361,15 @@
 /* The banner was colliding with the section heading below it — it is a block
    with its own space, not an inline aside. */
 .note.warn { display: block; margin: 0 0 1rem; line-height: 1.5; }
+
+/* ── who has access ──────────────────────────────────────────────────────────
+   OAuth clients with live tokens, revocable per row. Token VALUES are never
+   shown here — nothing legitimate ever asks you to paste an OAuth token, so
+   displaying one is risk with no use. The static api_token is different: it
+   exists to be pasted, so its row above has reveal and regenerate. */
+.access-block { margin: 1.1rem 0; }
+.access-block h4 { margin: 0 0 0.1rem; font-size: 0.88rem; }
+.access-list { list-style: none; margin: 0.5rem 0 0; padding: 0;
+               display: flex; flex-direction: column; gap: 0.45rem; }
+.access-list li { display: flex; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
+.access-list .mono { font-family: var(--mono, ui-monospace, monospace); font-size: 0.84rem; }

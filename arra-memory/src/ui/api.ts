@@ -174,10 +174,23 @@ export const api = {
 
   health: () => call<Health>("/api/health"),
 
+  access: {
+    clients: () =>
+      call<{ clients: Array<{ clientId: string; clientName: string | null; createdAt: string;
+        activeTokens: number; lastTokenAt: string | null; scope: string | null }> }>("/api/access/clients"),
+    revoke: (id: string) =>
+      call<{ revoked: string }>(`/api/access/clients/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
+
   settings: {
     get: () => call<SettingsInfo>("/api/settings"),
     patch: (patch: Record<string, string>) =>
       call<SettingsInfo>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+    reveal: (key: string) =>
+      call<{ key: string; value: string }>(`/api/settings/reveal/${encodeURIComponent(key)}`),
+    regenerate: (key: string) =>
+      call<{ key: string; value: string; restartRequired: boolean }>(
+        `/api/settings/regenerate/${encodeURIComponent(key)}`, { method: "POST" }),
   },
 
   tools: {

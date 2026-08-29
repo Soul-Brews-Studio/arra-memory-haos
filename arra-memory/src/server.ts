@@ -1,5 +1,8 @@
 import {
   describeSettings,
+  pinnedByEnv,
+  SECRET_KEYS,
+  type SettingKey,
   setting,
   SETTING_KEYS,
   settingsWritable,
@@ -36,7 +39,9 @@ import {
   getClient,
   isRegisteredRedirect,
   issueCode,
+  listClients,
   registerClient,
+  revokeClient,
   sweepExpired,
 } from "./oauth";
 import {
@@ -55,7 +60,7 @@ import {
   recordSearch,
   searchLogStats,
 } from "./searchlog";
-import { escapeHtml, readCookie, timingSafeEqual, type MemoryKind } from "./utils";
+import { escapeHtml, randomToken, readCookie, timingSafeEqual, type MemoryKind } from "./utils";
 import { buildDigest, digestWindows } from "./digest";
 import { buildGraph } from "./graph";
 import { ensureSchema, replicaStatus } from "./db";
@@ -745,6 +750,65 @@ const app = new Elysia()
       restartRequired: written.length > 0,
       ...describeSettings(),
     });
+  })
+
+  // ── access: who can get in, shown and controlled from the settings page ────
+  //
+  // OWNER SESSION ONLY, like /api/settings and for the same reason: these
+  // endpoints mint and kill credentials. Letting an API token reveal or
+  // regenerate the API token would make any leak self-renewing.
+  .get("/api/access/clients", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    if (auth.method !== "owner-session") return json({ error: "forbidden" }, 403);
+    return json({ clients: await listClients() });
+  })
+
+  // Revoke = the tokens and pending codes die; the registration row stays as
+  // the record. Takes effect on the client\'s next request — verifyBearer reads
+  // the table every time, so there is no cache to wait out.
+  .delete("/api/access/clients/:id", async ({ request, params }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    if (auth.method !== "owner-session") return json({ error: "forbidden" }, 403);
+    await revokeClient(params.id);
+    return json({ revoked: params.id });
+  })
+
+  // The one secret it makes sense to SHOW: the static api_token is what you
+  // paste into a client, so the owner needs to read it back. OAuth tokens are
+  // never shown — nothing legitimate ever asks you to paste one.
+  .get("/api/settings/reveal/:key", async ({ request, params }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    if (auth.method !== "owner-session") return json({ error: "forbidden" }, 403);
+    const key = params.key as SettingKey;
+    if (!SECRET_KEYS.has(key)) {
+      return json({ error: "not_secret", message: "Only secret settings can be revealed." }, 400);
+    }
+    return json({ key, value: setting(key) });
+  })
+
+  // Regenerate the static bearer. Refused where the value is pinned by the
+  // environment — on a supervised install the new value would be a lie the
+  // moment the container restarted with the old env.
+  .post("/api/settings/regenerate/:key", async ({ request, params }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    if (auth.method !== "owner-session") return json({ error: "forbidden" }, 403);
+    if (params.key !== "api_token") {
+      return json({ error: "unsupported", message: "Only api_token can be regenerated here." }, 400);
+    }
+    const { writable, reason } = settingsWritable();
+    if (!writable) return json({ error: "read_only", message: reason }, 409);
+    if (pinnedByEnv("api_token")) {
+      return json({ error: "pinned", message: "api_token comes from an environment variable — change it there." }, 409);
+    }
+    const value = randomToken(24);
+    await writeSettings({ api_token: value });
+    // The auth config was resolved at startup, so the OLD token keeps working
+    // until restart. Saying so beats a token that mysteriously half-works.
+    return json({ key: "api_token", value, restartRequired: true });
   })
 
   .post("/api/index/backfill", async ({ request }) => {
