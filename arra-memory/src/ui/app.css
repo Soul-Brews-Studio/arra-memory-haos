@@ -332,3 +332,32 @@
 .setting-meta { font-size: 0.74rem; opacity: 0.6; }
 .btn.tiny { font-size: 0.72rem; padding: 0.15rem 0.5rem; }
 .note.warn { border-left: 3px solid var(--warn, #d29922); padding-left: 0.7rem; }
+
+/* The options block is a DISCLOSURE, closed by default. On a supervised
+   install these are read-only and everywhere else they are set once, so they
+   must not push the tool list — the thing people actually come here for —
+   below the fold. */
+.server-options {
+  border: 1px solid var(--line, #242936);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  margin: 1rem 0 1.4rem;
+}
+.server-options > summary {
+  cursor: pointer;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  font-weight: 600; font-size: 0.92rem;
+  list-style: none;
+}
+.server-options > summary::-webkit-details-marker { display: none; }
+.server-options > summary::before {
+  content: "▸"; margin-right: 0.5rem; opacity: 0.55;
+  display: inline-block; transition: transform 0.12s ease;
+}
+.server-options[open] > summary::before { transform: rotate(90deg); }
+.server-options > summary .meta { font-weight: 400; }
+.server-options[open] > summary { margin-bottom: 0.8rem; }
+
+/* The banner was colliding with the section heading below it — it is a block
+   with its own space, not an inline aside. */
+.note.warn { display: block; margin: 0 0 1rem; line-height: 1.5; }

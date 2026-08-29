@@ -58,6 +58,7 @@ const STRINGS = {
     en: "This value comes from an environment variable, so it cannot be changed here",
   },
   "settings.restart": { th: "ต้องรีสตาร์ท", en: "restart required" },
+  "settings.readonly": { th: "อ่านอย่างเดียว", en: "read-only" },
   "settings.source.environment": { th: "จาก environment", en: "from environment" },
   "settings.source.settings": { th: "จากไฟล์ตั้งค่า", en: "from settings file" },
   "settings.source.unset": { th: "ยังไม่ตั้ง", en: "not set" },

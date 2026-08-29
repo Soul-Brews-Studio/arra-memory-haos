@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
-import { Panel } from "./Menu";
-import { Appearance } from "./Appearance";
 import { t } from "./i18n";
 import type { SettingsInfo, SettingField } from "./types";
 
@@ -29,7 +27,7 @@ import type { SettingsInfo, SettingField } from "./types";
  *   · That a change needs a RESTART. Options take effect at start; implying
  *     otherwise invites "I changed it and it did nothing".
  */
-export function Settings({ onClose, nav }: { onClose: () => void; nav?: React.ReactNode }) {
+export function ServerOptions() {
   const [info, setInfo] = useState<SettingsInfo | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
@@ -78,40 +76,38 @@ export function Settings({ onClose, nav }: { onClose: () => void; nav?: React.Re
   }
 
   return (
-    <Panel
-      title={t("settings.options.title")}
-      eyebrow={t("settings.options.eyebrow")}
-      subtitle={t("settings.options.subtitle")}
-      onClose={onClose}
-      nav={nav}
-      actions={
-        info?.writable ? (
-          <>
-            <button className="btn" disabled={!dirty || busy} onClick={() => void save()}>
-              {busy ? "…" : t("settings.save")}
-            </button>
-            {dirty && (
-              <button className="btn ghost" disabled={busy} onClick={() => setDraft({})}>
-                {t("settings.revert")}
-              </button>
-            )}
-          </>
-        ) : null
-      }
-    >
+    <details className="server-options">
+      {/* Collapsed by default, and that is the point. On a supervised install
+          these are read-only, and even where they are editable they are set
+          once — so they must not push the things you actually use down the
+          page. The summary carries enough to answer "is anything unset?"
+          without opening it. */}
+      <summary>
+        <span>{t("settings.options.title")}</span>
+        <span className="meta">
+          {info ? `${info.settings.filter((f) => f.value !== "").length}/${info.settings.length}` : "…"}
+          {info && !info.writable ? ` · ${t("settings.readonly")}` : ""}
+        </span>
+      </summary>
+
+      <p className="meta mb-1">{t("settings.options.subtitle")}</p>
+
       {error && <p className="error">{error}</p>}
       {note && <p className="note">{note}</p>}
+      {info && !info.writable && <p className="note warn">{info.reason}</p>}
 
-      {info && !info.writable && (
-        // Not an error — this is the correct state on HAOS, and the reason
-        // names the place that CAN change these.
-        <p className="note warn">{info.reason}</p>
+      {info?.writable && (
+        <div className="row gap-1 mb-1">
+          <button className="btn" disabled={!dirty || busy} onClick={() => void save()}>
+            {busy ? "…" : t("settings.save")}
+          </button>
+          {dirty && (
+            <button className="btn ghost" disabled={busy} onClick={() => setDraft({})}>
+              {t("settings.revert")}
+            </button>
+          )}
+        </div>
       )}
-
-      {/* Appearance lives HERE, not with the tools. It moved to the tool page
-          by accident in 0.24.0 when Settings became the options form — a theme
-          is something you set, not a tool you expose to a client. */}
-      <Appearance />
 
       <div className="settings-form">
         {info?.settings.map((f) => (
@@ -127,7 +123,7 @@ export function Settings({ onClose, nav }: { onClose: () => void; nav?: React.Re
           />
         ))}
       </div>
-    </Panel>
+    </details>
   );
 }
 
