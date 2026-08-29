@@ -133,11 +133,16 @@ export function Chips({
 
         if (row.values.length <= FOLD_AT) {
           return (
-            <div key={row.key} className="flex flex-wrap items-baseline gap-1.5">
-              {/* Fixed-width label column so the chips line up down the left
-                  edge and the rows read as a table, not five ragged lines. */}
-              <span className="eyebrow w-20 shrink-0">{row.label}</span>
-              {row.values.map((v) => chip(v))}
+            // A GRID, not a wrapping flex row. With label and chips inline,
+            // an overflowing row wrapped to the container's left edge — under
+            // the LABEL — so multi-line rows lost the very alignment the
+            // fixed-width label existed to provide. Two columns: the label
+            // owns the first, the chips wrap inside the second.
+            <div key={row.key} className="facet-row">
+              <span className="eyebrow">{row.label}</span>
+              <div className="flex flex-wrap items-baseline gap-1.5">
+                {row.values.map((v) => chip(v))}
+              </div>
             </div>
           );
         }
@@ -148,9 +153,11 @@ export function Chips({
         return (
           <details key={row.key} className="facet-fold">
             <summary>
-              <span className="eyebrow w-20 shrink-0">{row.label}</span>
-              <span className="meta">{row.values.length}</span>
-              {ticked.map((v) => chip(v))}
+              <span className="eyebrow">{row.label}</span>
+              <div className="flex flex-wrap items-baseline gap-1.5">
+                <span className="meta">{row.values.length}</span>
+                {ticked.map((v) => chip(v))}
+              </div>
             </summary>
             <div className="facet-fold-list">
               {row.values.map((v) => chip(v, "chip chip-line"))}
@@ -160,16 +167,18 @@ export function Chips({
       })}
 
       {anySelected && (
-        <div className="flex items-baseline gap-1.5">
-          <span className="eyebrow w-20 shrink-0" />
-          <button
-            type="button"
-            onClick={onClear}
-            className="chip"
-            style={{ color: "var(--color-faint)" }}
-          >
-            {t("archive.clear")}
-          </button>
+        <div className="facet-row">
+          <span className="eyebrow" />
+          <div>
+            <button
+              type="button"
+              onClick={onClear}
+              className="chip"
+              style={{ color: "var(--color-faint)" }}
+            >
+              {t("archive.clear")}
+            </button>
+          </div>
         </div>
       )}
     </div>

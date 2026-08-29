@@ -369,10 +369,21 @@
    exists to be pasted, so its row above has reveal and regenerate. */
 .access-block { margin: 1.1rem 0; }
 .access-block h4 { margin: 0 0 0.1rem; font-size: 0.88rem; }
+/* A real table: one shared grid, rows contribute cells via display:contents,
+   so every kind, name, count and button sits on the same column rule. The
+   flex version wrapped each row independently and nothing aligned with
+   anything — a list wearing a table\'s name. */
 .access-list { list-style: none; margin: 0.5rem 0 0; padding: 0;
-               display: flex; flex-direction: column; gap: 0.45rem; }
-.access-list li { display: flex; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
-.access-list .mono { font-family: var(--mono, ui-monospace, monospace); font-size: 0.84rem; }
+               display: grid;
+               grid-template-columns: max-content minmax(8rem, 1fr) max-content minmax(0, max-content) max-content;
+               gap: 0.45rem 0.9rem; align-items: baseline; }
+.access-list li { display: contents; }
+.access-list .mono { font-family: var(--mono, ui-monospace, monospace); font-size: 0.84rem;
+                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.access-list .num { font-variant-numeric: tabular-nums; }
+/* display:contents makes the <li> unpaintable, so dimming must land on cells */
+.access-list li.inactive > * { opacity: 0.5; }
+.access-list li.inactive .kind { border-style: dashed; }
 
 /* ── action buttons ──────────────────────────────────────────────────────────
    The settings/access controls shipped with class names from a different
@@ -408,7 +419,6 @@
   padding: 0.06rem 0.45rem; border-radius: 999px;
   border: 1px solid var(--line, #333a46); opacity: 0.85;
 }
-.access-list li.inactive { opacity: 0.5; }
 .access-list li.inactive .kind { border-style: dashed; }
 
 /* ── folded facet rows ───────────────────────────────────────────────────────
@@ -416,19 +426,24 @@
    the value count, and — critically — every TICKED chip, so collapsing never
    hides active filter state. Expanded, values run one per line with the count
    on the right edge: a table you can scan, not a cloud you must read. */
+.facet-row,
 .facet-fold > summary {
-  cursor: pointer; list-style: none;
-  display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap;
+  display: grid; grid-template-columns: 5rem 1fr;
+  column-gap: 0.6rem; align-items: baseline;
 }
+.facet-fold > summary { cursor: pointer; list-style: none; }
 .facet-fold > summary::-webkit-details-marker { display: none; }
-.facet-fold > summary::before {
-  content: "▸"; opacity: 0.5; font-size: 0.7rem;
-  transition: transform 0.12s ease; display: inline-block;
+/* The marker lives INSIDE the label cell — as a summary::before it would be
+   a third grid column and push every folded row out of line with flat ones. */
+.facet-fold > summary > .eyebrow::before {
+  content: "▸ "; opacity: 0.5; font-size: 0.7rem;
+  display: inline-block; transition: transform 0.12s ease;
 }
-.facet-fold[open] > summary::before { transform: rotate(90deg); }
+.facet-fold[open] > summary > .eyebrow::before { transform: rotate(90deg); }
 .facet-fold-list {
   display: flex; flex-direction: column; gap: 2px;
-  margin: 0.35rem 0 0.35rem 5.5rem; max-width: 34rem;
+  /* indented to the CHIP column: label width + column gap */
+  margin: 0.35rem 0 0.35rem calc(5rem + 0.6rem); max-width: 34rem;
 }
 .chip-line {
   display: flex; width: 100%; justify-content: space-between; align-items: baseline;

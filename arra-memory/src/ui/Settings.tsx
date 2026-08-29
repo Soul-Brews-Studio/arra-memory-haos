@@ -169,10 +169,8 @@ export function ServerOptions() {
               <li key={c.clientId} className={c.activeTokens === 0 ? "inactive" : undefined}>
                 <span className="kind">{kind}</span>
                 <span className="mono">{name || c.clientId.slice(0, 12) + "…"}</span>
-                <span className="meta">
-                  {c.activeTokens} {t("access.tokens")}
-                  {c.scope ? ` · ${c.scope}` : ""} · {c.createdAt.slice(0, 10)}
-                </span>
+                <span className="meta num">{c.activeTokens} {t("access.tokens")}</span>
+                <span className="meta">{c.scope ?? "—"} · {c.createdAt.slice(0, 10)}</span>
                 <button className="act-danger" onClick={() => void revoke(c.clientId)}>
                   {t("access.revoke")}
                 </button>
