@@ -453,7 +453,9 @@
 }
 
 /* the toggle — the last ROW of the list, not a chip beside it */
-.facet-more { cursor: pointer; width: 100%; text-align: left; }
+.facet-more { cursor: pointer; }
+/* only the TABLE variant spans the row; the inline one stays chip-sized */
+.chip-line.facet-more { width: 100%; text-align: left; }
 .facet-more:hover { color: var(--fg); }
 .facet-more-marker {
   display: inline-block; font-size: 0.65rem; opacity: 0.55;

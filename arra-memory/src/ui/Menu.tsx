@@ -60,6 +60,13 @@ export function NavBar({
    * to be reachable without reading anything.
    */
   lang?: { label: string; title: string; onSelect: () => void };
+  /**
+   * A control that acts on the SESSION rather than navigating within it —
+   * Lock, today. It renders after the theme and language controls because the
+   * bar has two zones: where you can go, then what you can do to the session.
+   * Lock sat among the destinations and read like one; it ends things.
+   */
+  session?: NavItem;
 }) {
   // Sorted here, not by the caller, so every bar in the app orders the same way.
   // Unweighted items default to 50 and fall in the middle rather than jumping to
@@ -69,25 +76,7 @@ export function NavBar({
   return (
     <nav className="flex flex-wrap items-center gap-1.5" aria-label="Archive">
       {ordered.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          onClick={item.onSelect}
-          title={item.title}
-          aria-current={item.active ? "page" : undefined}
-          className="rounded-lg border px-3 py-1.5 text-sm transition-colors"
-          style={{
-            borderColor: item.active ? "var(--color-ember)" : "var(--color-line)",
-            background: item.active ? "var(--color-ember-soft)" : "transparent",
-            color: item.danger
-              ? "#f0928f"
-              : item.active
-                ? "var(--color-ember)"
-                : "var(--color-dim)",
-          }}
-        >
-          {item.label}
-        </button>
+        <NavButton key={item.label} item={item} />
       ))}
 
       {themes && <ThemePicker {...themes} />}
@@ -103,7 +92,34 @@ export function NavBar({
           {lang.label}
         </button>
       )}
+
+      {session && <NavButton item={session} />}
     </nav>
+  );
+}
+
+/** One bar button. Extracted so a destination and a session control cannot
+ *  drift apart visually just because they render in different places. */
+function NavButton({ item }: { item: NavItem }) {
+  return (
+    <button
+      type="button"
+      onClick={item.onSelect}
+      title={item.title}
+      aria-current={item.active ? "page" : undefined}
+      className="rounded-lg border px-3 py-1.5 text-sm transition-colors"
+      style={{
+        borderColor: item.active ? "var(--color-ember)" : "var(--color-line)",
+        background: item.active ? "var(--color-ember-soft)" : "transparent",
+        color: item.danger
+          ? "#f0928f"
+          : item.active
+            ? "var(--color-ember)"
+            : "var(--color-dim)",
+      }}
+    >
+      {item.label}
+    </button>
   );
 }
 

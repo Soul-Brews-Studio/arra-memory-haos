@@ -223,18 +223,20 @@ export default function App() {
           active: view === "settings" || view === "tools",
           onSelect: () => setView("settings"),
         },
-        {
-          label: t("nav.lock"),
-          title: t("nav.lock.title"),
-          danger: true,
-          weight: 40,
-          onSelect: () =>
-            void api.session.close().finally(() => {
-              setPhase("locked");
-              setMemories([]);
-            }),
-        },
       ]}
+      // Not a destination — it ends the session, so it sits with the other
+      // session controls at the end of the bar rather than among the places
+      // you can go.
+      session={{
+        label: t("nav.lock"),
+        title: t("nav.lock.title"),
+        danger: true,
+        onSelect: () =>
+          void api.session.close().finally(() => {
+            setPhase("locked");
+            setMemories([]);
+          }),
+      }}
     />
   );
 

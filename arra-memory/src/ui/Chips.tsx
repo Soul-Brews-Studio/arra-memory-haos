@@ -46,12 +46,14 @@ type FacetKey = "kind" | "workspace" | "project" | "createdBy" | "tag";
  * take four. The unit that matters is lines consumed, and count is only a
  * proxy for it, so the proxy is tuned per key.
  */
-const FOLD_AT: Record<FacetKey, number> = {
-  kind: 10,
-  workspace: 8,
-  project: 4,      // repo URLs — the widest values on the page
-  createdBy: 8,
-  tag: 10,
+const FACETS: Record<FacetKey, { top: number; layout: "inline" | "table" }> = {
+  kind: { top: 10, layout: "inline" },
+  workspace: { top: 8, layout: "inline" },
+  // Repo URLs: the only values wide enough that one per line reads better than
+  // a wrapped flow. Four of them already fill two lines.
+  project: { top: 4, layout: "table" },
+  createdBy: { top: 8, layout: "inline" },
+  tag: { top: 10, layout: "inline" },
 };
 
 interface Row {
@@ -145,28 +147,14 @@ export function Chips({
           );
         };
 
-        if (row.values.length <= FOLD_AT[row.key]) {
-          return (
-            // A GRID, not a wrapping flex row. With label and chips inline,
-            // an overflowing row wrapped to the container's left edge — under
-            // the LABEL — so multi-line rows lost the very alignment the
-            // fixed-width label existed to provide. Two columns: the label
-            // owns the first, the chips wrap inside the second.
-            <div key={row.key} className="facet-row">
-              <span className="eyebrow">{row.label}</span>
-              <div className="flex flex-wrap items-baseline gap-1.5">
-                {row.values.map((v) => chip(v))}
-              </div>
-            </div>
-          );
-        }
-
+        const { top, layout } = FACETS[row.key];
         return (
-          <WideRow
+          <FacetRow
             key={row.key}
             label={row.label}
             values={row.values}
-            top={FOLD_AT[row.key]}
+            top={top}
+            layout={layout}
             isTicked={(v) => selected(row.key).includes(v)}
             chip={chip}
           />
@@ -193,24 +181,33 @@ export function Chips({
 }
 
 /**
- * A wide facet row: the head inline, the tail behind "+N".
+ * One facet row: the top values, then the rest behind a toggle.
  *
- * Facets arrive sorted by count, so the first `top` values are exactly the
- * ones a reader wants without clicking — hiding the whole row behind a fold
- * made the best chips cost a click too, which inverted the point. Only the
- * tail folds. A ticked value sitting in the tail is PROMOTED into the head:
- * active filter state must never be invisible.
+ * Facets arrive sorted by count, so the head of the list is exactly the part
+ * worth seeing without a click — folding a whole row put its BEST values
+ * behind one too, which inverted the point. Only the tail folds, and a TICKED
+ * value in the tail is promoted into the visible head: active filter state
+ * must never be invisible.
  *
- * React state rather than <details>, because the expanded tail has to render
- * as a full-width block BELOW the chip flow — a details element in the flex
- * flow would reflow the head chips around its own box when it opens.
+ * ── layout follows VALUE WIDTH, and nothing else ─────────────────────────────
+ *
+ * `table` gives each value its own line with the count right-aligned. It reads
+ * well for repo URLs, where a wrapped flow buries the count somewhere in the
+ * middle of a line. It reads badly for anything short: a full-width row for
+ * `thor 13` spends an entire line on two words, and ten tags that way is a
+ * column of mostly empty space where one wrapped line would do.
+ *
+ * So `inline` is the default and `table` is the exception, granted per facet
+ * in FACETS. The head and the tail always share ONE layout — expanding must
+ * continue the list, never change the shape of what is already on screen.
  */
-function WideRow({
-  label, values, top, isTicked, chip,
+function FacetRow({
+  label, values, top, layout, isTicked, chip,
 }: {
   label: string;
   values: Array<{ value: string; count: number }>;
   top: number;
+  layout: "inline" | "table";
   isTicked: (value: string) => boolean;
   chip: (v: { value: string; count: number }, cls?: string) => React.ReactNode;
 }) {
@@ -219,22 +216,29 @@ function WideRow({
   const promoted = values.slice(top).filter((v) => isTicked(v.value));
   const tail = values.slice(top).filter((v) => !isTicked(v.value));
   const hidden = tail.reduce((n, v) => n + v.count, 0);
+
+  const table = layout === "table";
+  const chipClass = table ? "chip chip-line" : "chip";
+
   return (
+    // A GRID, not a wrapping flex row. With label and values inline, an
+    // overflowing row wrapped to the container's left edge — under the LABEL —
+    // so multi-line rows lost the alignment the fixed-width label existed to
+    // provide. Two columns: the label owns the first, the values the second.
     <div className="facet-row">
       <span className="eyebrow">{label}</span>
-      {/* ONE list, head and tail alike. Rendering the head as wrapped chips and
-          the tail as table rows put two different UIs in one row: expanding
-          changed the shape of what was already on screen instead of simply
-          continuing it. Same row UI throughout — the toggle only decides how
-          far down the list goes. */}
-      <div className="facet-fold-list">
-        {head.map((v) => chip(v, "chip chip-line"))}
-        {promoted.map((v) => chip(v, "chip chip-line"))}
-        {open && tail.map((v) => chip(v, "chip chip-line"))}
+      <div className={table ? "facet-fold-list" : "flex flex-wrap items-baseline gap-1.5"}>
+        {head.map((v) => chip(v, chipClass))}
+        {promoted.map((v) => chip(v, chipClass))}
+        {open && tail.map((v) => chip(v, chipClass))}
         {tail.length > 0 && (
+          // Shaped exactly like the values it sits among — same element, same
+          // two spans — so the toggle reads as the end of the list rather than
+          // a control bolted beside it. The right span carries the hidden
+          // COUNT, so what folding costs you is legible without opening it.
           <button
             type="button"
-            className="chip chip-line facet-more"
+            className={`${chipClass} facet-more`}
             aria-expanded={open}
             onClick={() => setOpen(!open)}
           >
@@ -242,9 +246,7 @@ function WideRow({
               <span className="facet-more-marker">▸</span>
               {open ? t("facet.less") : t("facet.more").replace("{n}", String(tail.length))}
             </span>
-            {/* The hidden COUNT, in the count column — so the price of leaving
-                it folded is legible without opening it. */}
-            <span className="meta">{open ? "" : hidden}</span>
+            <span className="chip-count">{open ? "" : hidden}</span>
           </button>
         )}
       </div>
