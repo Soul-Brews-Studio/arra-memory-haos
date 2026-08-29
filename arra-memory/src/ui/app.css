@@ -452,8 +452,9 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* the "+N" toggle at the end of a wide row's head */
-.facet-more { cursor: pointer; }
+/* the toggle — the last ROW of the list, not a chip beside it */
+.facet-more { cursor: pointer; width: 100%; text-align: left; }
+.facet-more:hover { color: var(--fg); }
 .facet-more-marker {
   display: inline-block; font-size: 0.65rem; opacity: 0.55;
   transition: transform 0.12s ease; margin-right: 0.25rem;

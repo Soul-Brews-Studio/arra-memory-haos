@@ -218,29 +218,34 @@ function WideRow({
   const head = values.slice(0, top);
   const promoted = values.slice(top).filter((v) => isTicked(v.value));
   const tail = values.slice(top).filter((v) => !isTicked(v.value));
+  const hidden = tail.reduce((n, v) => n + v.count, 0);
   return (
     <div className="facet-row">
       <span className="eyebrow">{label}</span>
-      <div>
-        <div className="flex flex-wrap items-baseline gap-1.5">
-          {head.map((v) => chip(v))}
-          {promoted.map((v) => chip(v))}
-          {tail.length > 0 && (
-            <button
-              type="button"
-              className="chip facet-more"
-              aria-expanded={open}
-              onClick={() => setOpen(!open)}
-            >
+      {/* ONE list, head and tail alike. Rendering the head as wrapped chips and
+          the tail as table rows put two different UIs in one row: expanding
+          changed the shape of what was already on screen instead of simply
+          continuing it. Same row UI throughout — the toggle only decides how
+          far down the list goes. */}
+      <div className="facet-fold-list">
+        {head.map((v) => chip(v, "chip chip-line"))}
+        {promoted.map((v) => chip(v, "chip chip-line"))}
+        {open && tail.map((v) => chip(v, "chip chip-line"))}
+        {tail.length > 0 && (
+          <button
+            type="button"
+            className="chip chip-line facet-more"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <span>
               <span className="facet-more-marker">▸</span>
-              <span>+{tail.length}</span>
-            </button>
-          )}
-        </div>
-        {open && (
-          <div className="facet-fold-list">
-            {tail.map((v) => chip(v, "chip chip-line"))}
-          </div>
+              {open ? t("facet.less") : `+${tail.length} ${t("facet.more")}`}
+            </span>
+            {/* The hidden COUNT, in the count column — so the price of leaving
+                it folded is legible without opening it. */}
+            <span className="meta">{open ? "" : hidden}</span>
+          </button>
         )}
       </div>
     </div>

@@ -150,6 +150,8 @@ const STRINGS = {
   "facet.agent": { th: "ใครเขียน", en: "agent" },
   "facet.tag": { th: "แท็ก", en: "tag" },
   "facet.unfiled": { th: "ไม่ระบุ", en: "unfiled" },
+  "facet.more": { th: "อีก", en: "more" },
+  "facet.less": { th: "ย่อ", en: "less" },
 
   // ── empty states
   "empty.nothing": { th: "ไม่มีอะไรตรงกับที่กรอง", en: "Nothing matches that." },
