@@ -1,3 +1,4 @@
+import { setting } from "./config";
 import { db, ensureSchema, firstRow, rows } from "./db";
 import { SEARCH_LOG } from "./sql";
 import { nowIso } from "./utils";
@@ -75,7 +76,7 @@ function toEntry(row: SearchLogRow): SearchLogEntry {
 
 /** Off unless explicitly enabled — logging queries is opt-in, not a default. */
 export function searchLogEnabled(): boolean {
-  return (process.env.SEARCH_LOG ?? "").trim().toLowerCase() === "true";
+  return setting("search_log").toLowerCase() === "true";
 }
 
 /**

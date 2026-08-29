@@ -62,6 +62,11 @@ export THEME
 export TURSO_SYNC_URL
 export TURSO_AUTH_TOKEN
 export TURSO_SYNC_INTERVAL
+# Marks this process as Supervisor-managed, which is how the server knows its
+# options are owned elsewhere and its own settings form must stay read-only.
+# Set HERE rather than sniffed at runtime: run.sh IS the Supervisor entrypoint,
+# so its presence is the fact rather than an inference about the environment.
+export MANAGED_BY=supervisor
 export PORT=8099
 export PUBLIC_DIR=/app/public
 

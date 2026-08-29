@@ -9,4 +9,6 @@
  * Its own module because server.ts imports mcp.ts, and both need the name —
  * defining it in either would make the other's import a cycle.
  */
-export const INSTANCE_NAME = process.env.INSTANCE_NAME?.trim() || "Arra Memory";
+import { setting } from "./config";
+
+export const INSTANCE_NAME = setting("instance_name") || "Arra Memory";

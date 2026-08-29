@@ -1,3 +1,10 @@
+import {
+  describeSettings,
+  setting,
+  SETTING_KEYS,
+  settingsWritable,
+  writeSettings,
+} from "./config";
 import { Elysia } from "elysia";
 import { authenticate, unauthorized, type AuthConfig } from "./auth";
 import { handleMcp, toolCatalog, type JsonRpcRequest } from "./mcp";
@@ -59,8 +66,8 @@ const PORT = Number(process.env.PORT ?? 8099);
 const PUBLIC_DIR = process.env.PUBLIC_DIR ?? `${import.meta.dir}/../public`;
 
 const config: AuthConfig = {
-  ownerPassphrase: process.env.OWNER_PASSPHRASE ?? "",
-  apiToken: process.env.API_TOKEN || undefined,
+  ownerPassphrase: setting("owner_passphrase"),
+  apiToken: setting("api_token") || undefined,
 };
 
 if (!config.ownerPassphrase) {
@@ -82,7 +89,7 @@ if (!config.ownerPassphrase) {
  * forwarded headers, then the Host header.
  */
 function originOf(request: Request): string {
-  const configured = process.env.PUBLIC_URL?.trim();
+  const configured = setting("public_url");
   if (configured) return configured.replace(/\/+$/, "");
 
   const url = new URL(request.url);
@@ -221,7 +228,7 @@ const app = new Elysia()
     // What is switched on, without revealing any of it. Enough to tell a
     // misconfigured deploy from a broken one at a glance.
     features: {
-      semantic: Boolean(process.env.OLLAMA_URL?.trim()),
+      semantic: Boolean(setting("ollama_url")),
       embeddingModel: process.env.OLLAMA_URL?.trim()
         ? (process.env.EMBEDDING_MODEL?.trim() || "bge-m3")
         : null,
@@ -684,6 +691,60 @@ const app = new Elysia()
       const reason = error instanceof Error ? error.message : "embedding failed";
       return json({ error: "semantic_unavailable", message: reason }, 503);
     }
+  })
+
+  // ── settings ───────────────────────────────────────────────────────────────
+  //
+  // OWNER SESSION ONLY — never an API token, and never OAuth. A token is a
+  // machine credential that gets pasted into config files and CI; letting one
+  // rewrite `owner_passphrase` would turn any token leak into a permanent
+  // takeover instead of a rotation. Changing what the server IS requires
+  // proving you are the owner, at the keyboard.
+  .get("/api/settings", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    if (auth.method !== "owner-session") {
+      return json({ error: "forbidden", message: "Settings require an owner session." }, 403);
+    }
+    return json(describeSettings());
+  })
+
+  .patch("/api/settings", async ({ request }) => {
+    const auth = await authenticate(request, config);
+    if (!auth.ok) return unauthorized(originOf(request));
+    if (auth.method !== "owner-session") {
+      return json({ error: "forbidden", message: "Settings require an owner session." }, 403);
+    }
+
+    const { writable, reason } = settingsWritable();
+    if (!writable) return json({ error: "read_only", message: reason }, 409);
+
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const patch: Record<string, string> = {};
+    const unknown: string[] = [];
+    for (const [k, v] of Object.entries(body)) {
+      if ((SETTING_KEYS as readonly string[]).includes(k)) patch[k] = v === null ? "" : String(v);
+      else unknown.push(k);
+    }
+    if (unknown.length) {
+      return json(
+        { error: "unknown_keys", message: `Not options this add-on accepts: ${unknown.join(", ")}`,
+          valid: SETTING_KEYS },
+        400,
+      );
+    }
+
+    const { written, ignored } = await writeSettings(patch);
+    return json({
+      written,
+      // A key the environment pins cannot be changed by writing the file, and
+      // silently accepting it would leave the UI showing a value the server
+      // will never use.
+      ignored,
+      ignoredReason: ignored.length ? "pinned by an environment variable" : undefined,
+      restartRequired: written.length > 0,
+      ...describeSettings(),
+    });
   })
 
   .post("/api/index/backfill", async ({ request }) => {

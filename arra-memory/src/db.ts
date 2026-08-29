@@ -1,3 +1,4 @@
+import { setting } from "./config";
 import { createClient, type Client } from "@libsql/client";
 import { MEMORIES, MIGRATIONS, SCHEMA } from "./sql";
 
@@ -50,7 +51,7 @@ let replicaActive = false;
 export function replicaStatus(): { active: boolean; requested: boolean; error: string | null } {
   return {
     active: replicaActive,
-    requested: Boolean(process.env.TURSO_SYNC_URL?.trim() && process.env.TURSO_AUTH_TOKEN?.trim()),
+    requested: Boolean(setting("turso_sync_url") && setting("turso_auth_token")),
     error: replicaError,
   };
 }
@@ -72,8 +73,8 @@ export function db(): Client {
  * this runs at startup and catches.
  */
 async function startReplica(): Promise<void> {
-  const syncUrl = process.env.TURSO_SYNC_URL?.trim();
-  const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
+  const syncUrl = setting("turso_sync_url");
+  const authToken = setting("turso_auth_token");
   if (!syncUrl || !authToken) return;
 
   try {
@@ -83,7 +84,7 @@ async function startReplica(): Promise<void> {
       authToken,
       // Seconds. Low enough that a second client sees a write soon, high
       // enough that an idle add-on is not chattering at the network.
-      syncInterval: Number(process.env.TURSO_SYNC_INTERVAL) || 60,
+      syncInterval: Number(setting("turso_sync_interval")) || 60,
     });
     // Prove it before trusting it. A constructed client has contacted nothing;
     // the first sync is the first moment the credentials are actually tested.

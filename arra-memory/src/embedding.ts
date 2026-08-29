@@ -1,3 +1,4 @@
+import { setting } from "./config";
 /**
  * Semantic search, via an Ollama server you already run.
  *
@@ -108,15 +109,15 @@ export function toVectorLiteral(vector: number[]): string {
  * A blank URL is the off switch, not an error.
  */
 export function providerFromEnv(): EmbeddingProvider | null {
-  const baseUrl = process.env.OLLAMA_URL?.trim();
+  const baseUrl = setting("ollama_url");
   if (!baseUrl) return null;
 
   return ollamaProvider({
     baseUrl,
-    model: process.env.EMBEDDING_MODEL?.trim() || "bge-m3",
+    model: setting("embedding_model") || "bge-m3",
     // Must match the column width in sql.ts. Changing either one alone makes
     // every stored vector unreadable, which is why it is loud config and not a
     // constant buried in a query.
-    dimensions: Number(process.env.EMBEDDING_DIMENSIONS) || 1024,
+    dimensions: Number(setting("embedding_dimensions")) || 1024,
   });
 }
