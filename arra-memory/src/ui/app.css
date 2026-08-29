@@ -442,8 +442,8 @@
 .facet-fold[open] > summary > .eyebrow::before { transform: rotate(90deg); }
 .facet-fold-list {
   display: flex; flex-direction: column; gap: 2px;
-  /* indented to the CHIP column: label width + column gap */
-  margin: 0.35rem 0 0.35rem calc(5rem + 0.6rem); max-width: 34rem;
+  /* rendered inside the chip column already — no extra indent */
+  margin: 0.35rem 0; max-width: 34rem;
 }
 .chip-line {
   display: flex; width: 100%; justify-content: space-between; align-items: baseline;
@@ -451,3 +451,11 @@
 .chip-line > span:first-child {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* the "+N" toggle at the end of a wide row's head */
+.facet-more { cursor: pointer; }
+.facet-more-marker {
+  display: inline-block; font-size: 0.65rem; opacity: 0.55;
+  transition: transform 0.12s ease; margin-right: 0.25rem;
+}
+.facet-more[aria-expanded="true"] .facet-more-marker { transform: rotate(90deg); }

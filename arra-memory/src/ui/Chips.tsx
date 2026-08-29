@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { t } from "./i18n";
 import type { Facets, Scope } from "./types";
 
@@ -18,11 +19,13 @@ import type { Facets, Scope } from "./types";
  *                another control is a nested choice.
  *                AMENDED 2026-08-29: flat stopped scaling. On a 19,687-memory
  *                corpus the project row alone was ~40 chips over 15 lines and
- *                the filter bar displaced the content it filters. A row wider
- *                than FOLD_AT now folds to a disclosure — one value per line
- *                inside, counts right-aligned — and any TICKED value stays
- *                visible in the summary, because a fold that hides your active
- *                filter turns state invisible, which is worse than long.
+ *                the filter bar displaced the content it filters. A wide row
+ *                now shows its TOP values inline — facets are sorted by count,
+ *                so the head of the list is the part worth seeing without a
+ *                click — and folds only the tail behind "+N", which expands to
+ *                one value per line, counts right-aligned. A TICKED value in
+ *                the tail is promoted into the visible head: collapsing must
+ *                never hide active filter state.
  *   NO CHOICES — nothing opens. A chip is its own option and its own state.
  *   MARKS      — chips toggle. Within a row it is OR ("either workspace"),
  *                across rows it is AND, which is what ticking boxes means.
@@ -158,22 +161,15 @@ export function Chips({
           );
         }
 
-        // Wide row: fold. Ticked values surface in the summary so collapsing
-        // never hides live filter state; the full set is one value per line.
-        const ticked = row.values.filter((v) => selected(row.key).includes(v.value));
         return (
-          <details key={row.key} className="facet-fold">
-            <summary>
-              <span className="eyebrow">{row.label}</span>
-              <div className="flex flex-wrap items-baseline gap-1.5">
-                <span className="meta">{row.values.length}</span>
-                {ticked.map((v) => chip(v))}
-              </div>
-            </summary>
-            <div className="facet-fold-list">
-              {row.values.map((v) => chip(v, "chip chip-line"))}
-            </div>
-          </details>
+          <WideRow
+            key={row.key}
+            label={row.label}
+            values={row.values}
+            top={FOLD_AT[row.key]}
+            isTicked={(v) => selected(row.key).includes(v)}
+            chip={chip}
+          />
         );
       })}
 
@@ -192,6 +188,61 @@ export function Chips({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A wide facet row: the head inline, the tail behind "+N".
+ *
+ * Facets arrive sorted by count, so the first `top` values are exactly the
+ * ones a reader wants without clicking — hiding the whole row behind a fold
+ * made the best chips cost a click too, which inverted the point. Only the
+ * tail folds. A ticked value sitting in the tail is PROMOTED into the head:
+ * active filter state must never be invisible.
+ *
+ * React state rather than <details>, because the expanded tail has to render
+ * as a full-width block BELOW the chip flow — a details element in the flex
+ * flow would reflow the head chips around its own box when it opens.
+ */
+function WideRow({
+  label, values, top, isTicked, chip,
+}: {
+  label: string;
+  values: Array<{ value: string; count: number }>;
+  top: number;
+  isTicked: (value: string) => boolean;
+  chip: (v: { value: string; count: number }, cls?: string) => React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const head = values.slice(0, top);
+  const promoted = values.slice(top).filter((v) => isTicked(v.value));
+  const tail = values.slice(top).filter((v) => !isTicked(v.value));
+  return (
+    <div className="facet-row">
+      <span className="eyebrow">{label}</span>
+      <div>
+        <div className="flex flex-wrap items-baseline gap-1.5">
+          {head.map((v) => chip(v))}
+          {promoted.map((v) => chip(v))}
+          {tail.length > 0 && (
+            <button
+              type="button"
+              className="chip facet-more"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              <span className="facet-more-marker">▸</span>
+              <span>+{tail.length}</span>
+            </button>
+          )}
+        </div>
+        {open && (
+          <div className="facet-fold-list">
+            {tail.map((v) => chip(v, "chip chip-line"))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
