@@ -139,11 +139,11 @@ export function ServerOptions() {
 
       {info?.writable && (
         <div className="row gap-1 mb-1">
-          <button className="btn" disabled={!dirty || busy} onClick={() => void save()}>
+          <button className="act" disabled={!dirty || busy} onClick={() => void save()}>
             {busy ? "…" : t("settings.save")}
           </button>
           {dirty && (
-            <button className="btn ghost" disabled={busy} onClick={() => setDraft({})}>
+            <button className="act" disabled={busy} onClick={() => setDraft({})}>
               {t("settings.revert")}
             </button>
           )}
@@ -157,18 +157,27 @@ export function ServerOptions() {
           <p className="meta">{t("access.none")}</p>
         ) : (
           <ul className="access-list">
-            {clients.map((c) => (
-              <li key={c.clientId}>
-                <span className="mono">{c.clientName || c.clientId.slice(0, 12) + "…"}</span>
+            {clients.map((c) => {
+              const name = c.clientName || "";
+              // The client TOLD us its type at registration; surface it instead
+              // of making the reader parse it out of a name.
+              const kind = /claude code/i.test(name) ? "Claude Code"
+                : /codex/i.test(name) ? "Codex"
+                : /^claude$/i.test(name.trim()) ? "claude.ai"
+                : "other";
+              return (
+              <li key={c.clientId} className={c.activeTokens === 0 ? "inactive" : undefined}>
+                <span className="kind">{kind}</span>
+                <span className="mono">{name || c.clientId.slice(0, 12) + "…"}</span>
                 <span className="meta">
                   {c.activeTokens} {t("access.tokens")}
                   {c.scope ? ` · ${c.scope}` : ""} · {c.createdAt.slice(0, 10)}
                 </span>
-                <button className="btn ghost tiny" onClick={() => void revoke(c.clientId)}>
+                <button className="act-danger" onClick={() => void revoke(c.clientId)}>
                   {t("access.revoke")}
                 </button>
               </li>
-            ))}
+            );})}
           </ul>
         )}
       </div>
@@ -236,12 +245,12 @@ function Field({
           // secret is never in the page until the owner asks for it. Shown for
           // read-only installs too: reading the token back is the whole reason
           // to open this row.
-          <button type="button" className="btn ghost tiny" onClick={onReveal}>
+          <button type="button" className="act" onClick={onReveal}>
             {revealed ? t("settings.hide") : t("settings.show")}
           </button>
         )}
         {onRegenerate && (
-          <button type="button" className="btn ghost tiny" onClick={onRegenerate}
+          <button type="button" className="act" onClick={onRegenerate}
                   title={t("settings.regen.title")}>
             {t("settings.regen")}
           </button>
