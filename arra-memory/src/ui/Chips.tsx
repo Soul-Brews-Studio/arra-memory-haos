@@ -37,8 +37,19 @@ import type { Facets, Scope } from "./types";
 
 type FacetKey = "kind" | "workspace" | "project" | "createdBy" | "tag";
 
-/** A row wider than this folds. Ten fits one line at typical widths. */
-const FOLD_AT = 10;
+/**
+ * A row wider than this folds — per facet, because chip WIDTH varies more than
+ * chip count. Ten tags fit one line; ten projects are ten full repo URLs and
+ * take four. The unit that matters is lines consumed, and count is only a
+ * proxy for it, so the proxy is tuned per key.
+ */
+const FOLD_AT: Record<FacetKey, number> = {
+  kind: 10,
+  workspace: 8,
+  project: 4,      // repo URLs — the widest values on the page
+  createdBy: 8,
+  tag: 10,
+};
 
 interface Row {
   key: FacetKey;
@@ -131,7 +142,7 @@ export function Chips({
           );
         };
 
-        if (row.values.length <= FOLD_AT) {
+        if (row.values.length <= FOLD_AT[row.key]) {
           return (
             // A GRID, not a wrapping flex row. With label and chips inline,
             // an overflowing row wrapped to the container's left edge — under
