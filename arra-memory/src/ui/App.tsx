@@ -4,6 +4,7 @@ import { MemoryCard, useSlashFocus } from "./components";
 import { Chips, kindColor } from "./Chips";
 import { Atlas } from "./Atlas";
 import { SearchLog } from "./SearchLog";
+import { Settings } from "./Settings";
 import { Tools } from "./Tools";
 import { Workspaces } from "./Workspaces";
 import { NavBar, Panel } from "./Menu";
@@ -217,6 +218,13 @@ export default function App() {
         // Configuration lives at the end, where configuration belongs — you
         // pass the things you use daily to reach the thing you set once.
         {
+          label: t("nav.tools"),
+          title: t("nav.tools.title"),
+          weight: 51,
+          active: view === "tools",
+          onSelect: () => setView("tools"),
+        },
+        {
           label: t("nav.settings"),
           title: t("nav.settings.title"),
           weight: 50,
@@ -274,6 +282,8 @@ export default function App() {
         }}
       />
     ) : view === "settings" ? (
+      <Settings onClose={() => setView("memory")} nav={nav} />
+    ) : view === "tools" ? (
       <Tools onClose={() => setView("memory")} nav={nav} />
     ) : view === "log" ? (
       <SearchLog

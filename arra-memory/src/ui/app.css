@@ -288,3 +288,47 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── add-on options form ─────────────────────────────────────────────────────
+   A three-part row per option: the key (with a pin badge when the environment
+   owns it), the input, and where the value came from. The provenance line is
+   not decoration — a field showing the right value for the wrong reason looks
+   identical to a correct one until you change it and nothing happens. */
+.settings-form { display: flex; flex-direction: column; gap: 0.9rem; }
+
+.setting { display: grid; grid-template-columns: 1fr; gap: 0.3rem; }
+@media (min-width: 46rem) {
+  .setting { grid-template-columns: 14rem 1fr; align-items: baseline; }
+  .setting .setting-meta { grid-column: 2; }
+}
+
+.setting-key {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.86rem;
+  display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap;
+}
+
+.setting-key .pin {
+  font-style: normal; font-size: 0.7rem; letter-spacing: 0.04em;
+  padding: 0.05rem 0.4rem; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  opacity: 0.75; cursor: help;
+}
+
+.setting-input { display: flex; gap: 0.4rem; align-items: center; }
+.setting-input input {
+  flex: 1; min-width: 0;
+  font-family: var(--mono, ui-monospace, monospace); font-size: 0.86rem;
+}
+
+/* A locked field is still READABLE — hiding it would remove the answer to
+   "what is it set to", which is the main reason to open this page. */
+.setting.locked .setting-input input { opacity: 0.6; cursor: not-allowed; }
+
+.setting.dirty .setting-input input {
+  border-color: color-mix(in srgb, var(--accent, #58a6ff) 55%, transparent);
+}
+
+.setting-meta { font-size: 0.74rem; opacity: 0.6; }
+.btn.tiny { font-size: 0.72rem; padding: 0.15rem 0.5rem; }
+.note.warn { border-left: 3px solid var(--warn, #d29922); padding-left: 0.7rem; }

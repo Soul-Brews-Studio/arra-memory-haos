@@ -22,19 +22,19 @@ import { useEffect, useState } from "react";
  * link — is not a cost for an app that is a single bundle behind a passphrase.
  */
 
-export type View = "memory" | "atlas" | "workspaces" | "settings" | "log";
+export type View = "memory" | "atlas" | "workspaces" | "settings" | "tools" | "log";
 
-const VIEWS: View[] = ["memory", "atlas", "workspaces", "settings", "log"];
+const VIEWS: View[] = ["memory", "atlas", "workspaces", "settings", "tools", "log"];
 
 /**
  * Renamed destinations, old name → new.
  *
- * `#/tools` was a real URL people could have bookmarked or linked to before
- * the tool surface moved under Settings. Silently landing them on the archive
- * would look like the page had been deleted, so the old name keeps working.
+ * `#/tools` used to be aliased here, from when the tool surface lived under
+ * Settings. It is a real view again in 0.24.0 — Settings now holds the add-on's
+ * OPTIONS — so the alias is gone and the old URL resolves natively. Anyone who
+ * bookmarked it still lands on the tool list, which is what they meant.
  */
 const ALIASES: Record<string, View> = {
-  tools: "settings",
   // `#/archive` was the home view's URL for five versions and is the one most
   // likely to have been bookmarked. Renaming a page must not break the link
   // someone kept to it.

@@ -165,3 +165,24 @@ export interface ToolInfo {
   destructive: boolean;
   disabled: boolean;
 }
+
+export interface SettingField {
+  key: string;
+  secret: boolean;
+  /** Secrets arrive as `<set:N>` — the length, never the value. */
+  value: string;
+  source: "environment" | "settings" | "unset";
+  pinnedByEnv: boolean;
+  restartRequired: boolean;
+}
+
+export interface SettingsInfo {
+  supervised: boolean;
+  writable: boolean;
+  reason: string;
+  settings: SettingField[];
+  written?: string[];
+  ignored?: string[];
+  ignoredReason?: string;
+  restartRequired?: boolean;
+}

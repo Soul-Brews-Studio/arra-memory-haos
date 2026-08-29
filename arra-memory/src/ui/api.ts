@@ -1,5 +1,6 @@
 import type {
   AgentFacet,
+  SettingsInfo,
   EmbeddingCoverage,
   Facets,
   Graph,
@@ -172,6 +173,12 @@ export const api = {
   stats: () => call<{ stats: MemoryStats; embeddings: EmbeddingCoverage }>("/api/stats"),
 
   health: () => call<Health>("/api/health"),
+
+  settings: {
+    get: () => call<SettingsInfo>("/api/settings"),
+    patch: (patch: Record<string, string>) =>
+      call<SettingsInfo>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+  },
 
   tools: {
     list: () => call<{ tools: ToolInfo[]; locked: string[] }>("/api/tools"),
