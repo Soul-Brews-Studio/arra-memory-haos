@@ -18,6 +18,7 @@ import {
   type Facet,
   listTags,
   listWorkspaces,
+  recallMemories,
   searchMemories,
   searchSemantic,
   updateMemory,
@@ -661,90 +662,27 @@ const app = new Elysia()
     if (!auth.ok) return unauthorized(originOf(request));
 
     const body = (await request.json().catch(() => ({}))) as any;
-    const requestedMode: "keyword" | "semantic" | "hybrid" = body.mode ?? "hybrid";
-    const query = String(body.query ?? "");
-    // One scope object threaded through every branch below, so keyword,
-    // semantic and hybrid cannot drift into filtering on different things —
-    // a hybrid pass whose two halves disagreed on workspace would silently
-    // fuse results from inside and outside it.
-    const common = {
-      kind: body.kind,
-      workspace: body.workspace,
-      project: body.project,
-      createdBy: body.createdBy,
-      limit: body.limit,
-    };
-
-    if (requestedMode === "keyword" || !query.trim()) {
-      const memories = await searchMemories({ query, ...common, tag: body.tag, source: "web" });
-      return json({ requestedMode, effectiveMode: "keyword", fallback: null, memories });
-    }
-
-    const started = Date.now();
+    // The fusion itself lives in memory.ts since 0.23.0, so this route and the
+    // MCP `recall_memories` tool cannot drift apart. It used to live here, and
+    // the cost was that MCP had no way to reach it.
     try {
-      // NoLog variants: hybrid is one user action running two passes, and both
-      // recording themselves would double-count every hybrid search.
-      const semantic = await searchSemanticNoLog({ query, ...common });
-      if (requestedMode === "semantic") {
-        if (query.trim()) void recordSearch({
-          query, mode: "semantic", kind: body.kind,
-          workspace: body.workspace, project: body.project,
-          resultIds: semantic.memories.map((m) => m.id),
-          durationMs: Date.now() - started,
+      return json(
+        await recallMemories({
+          query: String(body.query ?? ""),
+          mode: body.mode,
+          kind: body.kind,
+          workspace: body.workspace,
+          project: body.project,
+          createdBy: body.createdBy,
+          tag: body.tag,
+          limit: body.limit,
           source: "web",
-        });
-        return json({
-          requestedMode, effectiveMode: "semantic", fallback: null,
-          memories: semantic.memories, distances: semantic.distances,
-        });
-      }
-
-      // Hybrid: reciprocal rank fusion. Ranks rather than raw scores, because
-      // BM25 and cosine distance are not on comparable scales and normalising
-      // them against each other invents a precision neither one has.
-      const keyword = await searchMemoriesNoLog({ query, ...common });
-      const K = 60;
-      const scores = new Map<string, number>();
-      const byId = new Map<string, any>();
-      keyword.forEach((m, i) => {
-        scores.set(m.id, (scores.get(m.id) ?? 0) + 1 / (K + i + 1));
-        byId.set(m.id, m);
-      });
-      semantic.memories.forEach((m, i) => {
-        scores.set(m.id, (scores.get(m.id) ?? 0) + 1 / (K + i + 1));
-        byId.set(m.id, m);
-      });
-      const merged = [...scores.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, body.limit ?? 20)
-        .map(([id]) => byId.get(id));
-
-      if (query.trim()) void recordSearch({
-        query, mode: "hybrid", kind: body.kind,
-        workspace: body.workspace, project: body.project,
-        resultIds: merged.map((m: any) => m.id),
-        durationMs: Date.now() - started,
-        source: "web",
-      });
-
-      return json({
-        requestedMode, effectiveMode: "hybrid", fallback: null,
-        memories: merged,
-        counts: { keyword: keyword.length, semantic: semantic.memories.length },
-      });
+        }),
+      );
     } catch (error) {
-      // Explicit semantic FAILS; hybrid degrades to keyword and names the reason.
+      // Only an explicit `semantic` request throws; hybrid degrades internally.
       const reason = error instanceof Error ? error.message : "embedding failed";
-      if (requestedMode === "semantic") {
-        return json({ error: "semantic_unavailable", message: reason }, 503);
-      }
-      // Logged as keyword, not hybrid, because keyword is what actually ran —
-      // the fallback reason is in the response for the caller to see.
-      const memories = await searchMemories({ query, ...common, tag: body.tag, source: "web" });
-      return json({
-        requestedMode, effectiveMode: "keyword",
-        fallback: { used: true, reason }, memories,
-      });
+      return json({ error: "semantic_unavailable", message: reason }, 503);
     }
   })
 

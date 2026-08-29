@@ -898,6 +898,139 @@ export async function searchSemanticNoLog(
   };
 }
 
+// ── recall: one implementation for every caller ──────────────────────────────
+
+export type SearchMode = "keyword" | "semantic" | "hybrid";
+
+export interface RecallResult {
+  requestedMode: SearchMode;
+  /** What actually ran. Never assume this equals requestedMode. */
+  effectiveMode: SearchMode;
+  /** Non-null only when a richer mode was asked for and could not run. */
+  fallback: { used: true; reason: string } | null;
+  memories: Memory[];
+  distances?: Record<string, number>;
+  counts?: { keyword: number; semantic: number };
+}
+
+/**
+ * Keyword, semantic, or both fused — for every surface that recalls memories.
+ *
+ * This lives here rather than in the HTTP route because it was in the route,
+ * and the consequence was that MCP could not reach it. `recall_memories` ran a
+ * literal keyword scan and answered "No memories matched" for questions the
+ * corpus could answer perfectly well by meaning — invisible, because a
+ * plausible empty result looks exactly like a true one. Measured 2026-08-29:
+ * "how do I build a brand new virtual machine from scratch" returned 0 hits by
+ * keyword and the right runbook first by hybrid.
+ *
+ * MCP is not a secondary surface. claude.ai cannot issue an HTTP call at all,
+ * and an agent mid-task will not either — so a capability that exists only on
+ * the REST route is invisible to every consumer that actually matters.
+ *
+ * Degradation is REPORTED, never silent. An explicit `semantic` request throws
+ * when embeddings are unavailable; `hybrid` falls back to keyword and names the
+ * reason, so a caller is never left believing a keyword scan searched by
+ * meaning.
+ */
+export async function recallMemories(
+  input: MemoryScope & {
+    query: string;
+    mode?: SearchMode;
+    tag?: string;
+    limit?: number;
+    source?: string;
+  },
+): Promise<RecallResult> {
+  const requestedMode: SearchMode = input.mode ?? "hybrid";
+  const query = String(input.query ?? "");
+  const source = input.source ?? "internal";
+
+  // One scope object threaded through every branch, so the passes cannot drift
+  // into filtering on different things — a hybrid whose halves disagreed on
+  // workspace would silently fuse results from inside and outside it.
+  const common = {
+    kind: input.kind,
+    workspace: input.workspace,
+    project: input.project,
+    createdBy: input.createdBy,
+    limit: input.limit,
+  } as MemoryScope & { limit?: number };
+
+  // An empty query has nothing to embed; it means "most recent important",
+  // which is a keyword-path concern.
+  if (requestedMode === "keyword" || !query.trim()) {
+    const memories = await searchMemories({ query, ...common, tag: input.tag, source });
+    return { requestedMode, effectiveMode: "keyword", fallback: null, memories };
+  }
+
+  const started = Date.now();
+  try {
+    // NoLog variants: hybrid is ONE user action running two passes, and both
+    // recording themselves would double-count every hybrid search.
+    const semantic = await searchSemanticNoLog({ query, ...common });
+
+    if (requestedMode === "semantic") {
+      void recordSearch({
+        query, mode: "semantic", kind: scopeLabel(input.kind as ScopeValue),
+        workspace: scopeLabel(input.workspace), project: scopeLabel(input.project),
+        resultIds: semantic.memories.map((m) => m.id),
+        durationMs: Date.now() - started, source,
+      });
+      return {
+        requestedMode, effectiveMode: "semantic", fallback: null,
+        memories: semantic.memories, distances: semantic.distances,
+      };
+    }
+
+    // Reciprocal rank fusion — ranks, not raw scores. BM25 and cosine distance
+    // are not on comparable scales, and normalising them against each other
+    // invents a precision neither one has.
+    const keyword = await searchMemoriesNoLog({ query, ...common });
+    const K = 60;
+    const scores = new Map<string, number>();
+    const byId = new Map<string, Memory>();
+    keyword.forEach((m, i) => {
+      scores.set(m.id, (scores.get(m.id) ?? 0) + 1 / (K + i + 1));
+      byId.set(m.id, m);
+    });
+    semantic.memories.forEach((m, i) => {
+      scores.set(m.id, (scores.get(m.id) ?? 0) + 1 / (K + i + 1));
+      byId.set(m.id, m);
+    });
+    const merged = [...scores.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, clampLimit(input.limit))
+      .map(([id]) => byId.get(id)!)
+      .filter(Boolean);
+
+    void recordSearch({
+      query, mode: "hybrid", kind: scopeLabel(input.kind as ScopeValue),
+      workspace: scopeLabel(input.workspace), project: scopeLabel(input.project),
+      resultIds: merged.map((m) => m.id),
+      durationMs: Date.now() - started, source,
+    });
+
+    return {
+      requestedMode, effectiveMode: "hybrid", fallback: null,
+      memories: merged,
+      counts: { keyword: keyword.length, semantic: semantic.memories.length },
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "embedding failed";
+    // An explicit semantic request FAILS rather than quietly becoming keyword:
+    // a caller who asked for meaning deserves to know it did not happen.
+    if (requestedMode === "semantic") throw new Error(reason);
+    // Logged as keyword, because keyword is what actually ran. The reason
+    // travels back in `fallback` for the caller to surface.
+    const memories = await searchMemories({ query, ...common, tag: input.tag, source });
+    return {
+      requestedMode, effectiveMode: "keyword",
+      fallback: { used: true, reason }, memories,
+    };
+  }
+}
+
 /** How much of the corpus carries a vector, and from which model. */
 export async function embeddingCoverage(): Promise<{
   total: number;

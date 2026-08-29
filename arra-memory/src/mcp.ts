@@ -10,6 +10,7 @@ import {
   listTags,
   listWorkspaces,
   searchInRange,
+  recallMemories,
   searchMemories,
   updateMemory,
   type Memory,
@@ -237,11 +238,17 @@ const BASE_TOOLS = [
   {
     name: "recall_memories",
     description:
-      "Recall memories by keyword across titles, content, and tags, optionally narrowed by kind, workspace, project, agent, or tag. An empty query returns the most recent important memories.",
+      "Recall memories across titles, content, and tags — by meaning and by keyword together, so a question phrased differently from the memory still finds it. Optionally narrowed by kind, workspace, project, agent, or tag. An empty query returns the most recent important memories. The response reports `matchMode`, which is what ACTUALLY ran: if it says `keyword`, embeddings were unavailable and a differently-worded question may still have an answer.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", maxLength: 240 },
+        mode: {
+          type: "string",
+          enum: ["hybrid", "semantic", "keyword"],
+          description:
+            "How to search. `hybrid` (default) fuses meaning and keyword, and falls back to keyword — saying so — if embeddings are unavailable. `semantic` is meaning only and FAILS rather than degrade. `keyword` is a literal scan: correct for exact strings such as an id, a filename, or an error message, where meaning-based recall is the wrong tool.",
+        },
         kind: KIND_ENUM,
         ...SCOPE_PROPS,
         tag: { type: "string" },
@@ -906,27 +913,44 @@ function describeScope(args: Record<string, any>): string {
 }
 
 async function recall(args: Record<string, any>) {
-  const memories = await searchMemories({
-    query: args.query,
+  // Hybrid by default. Until 0.23.0 this ran a literal keyword scan and said so
+  // honestly — but honesty about a limitation is not a substitute for not
+  // having it. A model asking by MEANING got "No memories matched" from a
+  // corpus that could answer, and an empty result is indistinguishable from a
+  // true one. MCP is the only door claude.ai has, so a capability that lived
+  // solely on the REST route was invisible to the consumers that matter.
+  const result = await recallMemories({
+    query: args.query ?? "",
+    mode: args.mode,
     ...scopeFrom(args),
     tag: args.tag,
     limit: args.limit ?? 10,
     source: "mcp",
   });
 
+  const { memories, effectiveMode, fallback } = result;
   const scope = describeScope(args);
 
   const body = memories.length
     ? memories.map((m, i) => `${i + 1}. ${render(m)}`).join("\n\n")
-    : `No memories matched${args.query ? ` “${args.query}”` : ""}${scope ? ` in ${scope}` : ""}.`;
+    : `No memories matched${args.query ? ` “${args.query}”` : ""}${scope ? ` in ${scope}` : ""}.` +
+      // An empty keyword result is a much weaker signal than an empty hybrid
+      // one, and the model cannot tell them apart unless we say so.
+      (effectiveMode === "keyword" && args.query
+        ? `\n\n(Searched by keyword only${fallback ? ` — ${fallback.reason}` : ""}. ` +
+          `A search by meaning may still find something.)`
+        : "");
 
   return {
     ...text(body),
-    // matchMode is stated rather than implied: a model should know this is
-    // literal keyword matching and not assume semantic recall found everything.
     structuredContent: {
       query: args.query ?? "",
-      matchMode: "keyword",
+      // Reported, never assumed: this is what ACTUALLY ran, which is not
+      // always what was asked for.
+      matchMode: effectiveMode,
+      requestedMode: result.requestedMode,
+      ...(fallback ? { fallback } : {}),
+      ...(result.counts ? { counts: result.counts } : {}),
       ...scopeFrom(args),
       count: memories.length,
       memories,
