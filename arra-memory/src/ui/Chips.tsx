@@ -16,6 +16,13 @@ import type { Facets, Scope } from "./types";
  *   FLAT       — every row is present at once. Project chips do not wait for a
  *                workspace to be chosen; a control that appears in response to
  *                another control is a nested choice.
+ *                AMENDED 2026-08-29: flat stopped scaling. On a 19,687-memory
+ *                corpus the project row alone was ~40 chips over 15 lines and
+ *                the filter bar displaced the content it filters. A row wider
+ *                than FOLD_AT now folds to a disclosure — one value per line
+ *                inside, counts right-aligned — and any TICKED value stays
+ *                visible in the summary, because a fold that hides your active
+ *                filter turns state invisible, which is worse than long.
  *   NO CHOICES — nothing opens. A chip is its own option and its own state.
  *   MARKS      — chips toggle. Within a row it is OR ("either workspace"),
  *                across rows it is AND, which is what ticking boxes means.
@@ -29,6 +36,9 @@ import type { Facets, Scope } from "./types";
  */
 
 type FacetKey = "kind" | "workspace" | "project" | "createdBy" | "tag";
+
+/** A row wider than this folds. Ten fits one line at typical widths. */
+const FOLD_AT = 10;
 
 interface Row {
   key: FacetKey;
@@ -101,35 +111,53 @@ export function Chips({
 
   return (
     <div className="mt-3 flex flex-col gap-1.5">
-      {rows.map((row) => (
-        <div key={row.key} className="flex flex-wrap items-baseline gap-1.5">
-          {/* Fixed-width label column so the chips line up down the left edge
-              and the rows read as a table rather than as five ragged lines. */}
-          <span className="eyebrow w-20 shrink-0">{row.label}</span>
-          {row.values.map((v) => {
-            const on = selected(row.key).includes(v.value);
-            return (
-              <button
-                key={v.value}
-                type="button"
-                className="chip"
-                aria-pressed={on}
-                onClick={() => toggle(row.key, v.value)}
-                // The kind row is the one place colour carries meaning rather
-                // than state, so an unticked kind chip keeps its hue.
-                style={
-                  row.key === "kind" && !on
-                    ? { color: kindColor(v.value) }
-                    : undefined
-                }
-              >
-                <span>{v.value}</span>
-                <span className="chip-count">{v.count}</span>
-              </button>
-            );
-          })}
-        </div>
-      ))}
+      {rows.map((row) => {
+        const chip = (v: { value: string; count: number }, cls = "chip") => {
+          const on = selected(row.key).includes(v.value);
+          return (
+            <button
+              key={v.value}
+              type="button"
+              className={cls}
+              aria-pressed={on}
+              onClick={() => toggle(row.key, v.value)}
+              // The kind row is the one place colour carries meaning rather
+              // than state, so an unticked kind chip keeps its hue.
+              style={row.key === "kind" && !on ? { color: kindColor(v.value) } : undefined}
+            >
+              <span>{v.value}</span>
+              <span className="chip-count">{v.count}</span>
+            </button>
+          );
+        };
+
+        if (row.values.length <= FOLD_AT) {
+          return (
+            <div key={row.key} className="flex flex-wrap items-baseline gap-1.5">
+              {/* Fixed-width label column so the chips line up down the left
+                  edge and the rows read as a table, not five ragged lines. */}
+              <span className="eyebrow w-20 shrink-0">{row.label}</span>
+              {row.values.map((v) => chip(v))}
+            </div>
+          );
+        }
+
+        // Wide row: fold. Ticked values surface in the summary so collapsing
+        // never hides live filter state; the full set is one value per line.
+        const ticked = row.values.filter((v) => selected(row.key).includes(v.value));
+        return (
+          <details key={row.key} className="facet-fold">
+            <summary>
+              <span className="eyebrow w-20 shrink-0">{row.label}</span>
+              <span className="meta">{row.values.length}</span>
+              {ticked.map((v) => chip(v))}
+            </summary>
+            <div className="facet-fold-list">
+              {row.values.map((v) => chip(v, "chip chip-line"))}
+            </div>
+          </details>
+        );
+      })}
 
       {anySelected && (
         <div className="flex items-baseline gap-1.5">

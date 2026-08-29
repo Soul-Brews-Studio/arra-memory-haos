@@ -410,3 +410,29 @@
 }
 .access-list li.inactive { opacity: 0.5; }
 .access-list li.inactive .kind { border-style: dashed; }
+
+/* ── folded facet rows ───────────────────────────────────────────────────────
+   A facet wider than FOLD_AT collapses to this. The summary keeps the label,
+   the value count, and — critically — every TICKED chip, so collapsing never
+   hides active filter state. Expanded, values run one per line with the count
+   on the right edge: a table you can scan, not a cloud you must read. */
+.facet-fold > summary {
+  cursor: pointer; list-style: none;
+  display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap;
+}
+.facet-fold > summary::-webkit-details-marker { display: none; }
+.facet-fold > summary::before {
+  content: "▸"; opacity: 0.5; font-size: 0.7rem;
+  transition: transform 0.12s ease; display: inline-block;
+}
+.facet-fold[open] > summary::before { transform: rotate(90deg); }
+.facet-fold-list {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0.35rem 0 0.35rem 5.5rem; max-width: 34rem;
+}
+.chip-line {
+  display: flex; width: 100%; justify-content: space-between; align-items: baseline;
+}
+.chip-line > span:first-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
