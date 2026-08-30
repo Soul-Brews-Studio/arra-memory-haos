@@ -1,5 +1,5 @@
 name: "Arra Memory"
-version: "0.26.9"
+version: "0.27.0"
 slug: "arra_memory"
 description: >-
   A durable memory corpus that lives in your Home Assistant sidebar and answers
@@ -121,6 +121,20 @@ options:
   # Seconds between syncs. Low enough that another client sees a write soon,
   # high enough that an idle add-on is not chattering at the network.
   turso_sync_interval: 60
+  # ── the fleet, over MQTT (optional) ────────────────────────────────────────
+  # Point this at the fleet's broker and this add-on becomes the door claude.ai
+  # does not otherwise have: it cannot open an MQTT connection or reach a LAN
+  # address, but it can call an MCP tool here. list_fleet then shows who is
+  # alive, and send_to_oracle publishes into another oracle's channel.
+  #
+  # Blank disables all three fleet tools rather than offering tools that always
+  # fail — an unusable tool still costs every client context on every request.
+  mqtt_url: ""
+  mqtt_username: ""
+  mqtt_password: ""
+  # Topic root. Every member lives under <prefix>/<name>/… and nothing here ever
+  # subscribes to `#` — the fleet broker carries roughly 109 GB/day.
+  mqtt_prefix: "oracle"
 schema:
   owner_passphrase: password
   api_token: password
@@ -140,3 +154,10 @@ schema:
   turso_sync_url: str
   turso_auth_token: password
   turso_sync_interval: int
+  # `str` not `url?` — an optional url key whose shipped default is "" fails
+  # Supervisor's validation BEFORE the container is created, and the add-on then
+  # never starts with an EMPTY log. Learned the hard way 2026-08-27.
+  mqtt_url: str
+  mqtt_username: str
+  mqtt_password: password
+  mqtt_prefix: str

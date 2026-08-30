@@ -60,6 +60,13 @@ export const SETTING_KEYS = [
   "turso_sync_url",
   "turso_auth_token",
   "turso_sync_interval",
+  // The fleet, over MQTT. Blank mqtt_url disables the fleet tools entirely —
+  // they are not offered rather than offered-and-failing, because a tool that
+  // always errors costs every client context on every request.
+  "mqtt_url",
+  "mqtt_username",
+  "mqtt_password",
+  "mqtt_prefix",
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -69,6 +76,7 @@ export const SECRET_KEYS = new Set<SettingKey>([
   "owner_passphrase",
   "api_token",
   "turso_auth_token",
+  "mqtt_password",
 ]);
 
 /**
@@ -98,6 +106,11 @@ export const RESTART_REQUIRED = new Set<SettingKey>([
   "turso_sync_url",
   "turso_auth_token",
   "turso_sync_interval",
+  // The broker connection is opened once at startup.
+  "mqtt_url",
+  "mqtt_username",
+  "mqtt_password",
+  "mqtt_prefix",
 ]);
 
 let fileSettings: Partial<Record<SettingKey, string>> = {};
@@ -130,6 +143,10 @@ const ENV_OF: Record<SettingKey, string> = {
   turso_sync_url: "TURSO_SYNC_URL",
   turso_auth_token: "TURSO_AUTH_TOKEN",
   turso_sync_interval: "TURSO_SYNC_INTERVAL",
+  mqtt_url: "MQTT_URL",
+  mqtt_username: "MQTT_USERNAME",
+  mqtt_password: "MQTT_PASSWORD",
+  mqtt_prefix: "MQTT_PREFIX",
 };
 
 /** The resolved value, or "" — env first, then the settings file. */

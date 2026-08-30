@@ -9,6 +9,7 @@ import {
   writeSettings,
 } from "./config";
 import { Elysia } from "elysia";
+import { startFleet, fleetEnabled } from "./fleet";
 import { authenticate, unauthorized, type AuthConfig } from "./auth";
 import { handleMcp, toolCatalog, type JsonRpcRequest } from "./mcp";
 import { enableAllTools, setToolDisabled, UNDISABLEABLE } from "./tools";
@@ -1048,9 +1049,22 @@ void ensureSchema().catch((error) => {
   );
 });
 
+/**
+ * The fleet connection, opened AFTER the HTTP listener the same way the schema
+ * is: a broker that is down, slow, or misconfigured must never stop this
+ * add-on from serving memories. startFleet() never throws; when it cannot
+ * connect the fleet tools say so explicitly rather than returning an empty
+ * list, because "I cannot see the fleet" and "the fleet is empty" are
+ * different answers and only one of them is honest here.
+ */
+startFleet();
+
 app.listen({ port: PORT, hostname: "0.0.0.0" });
 
 console.log(`[arra-memory] listening on 0.0.0.0:${PORT}`);
 console.log(
   `[arra-memory] auth: owner-session + oauth${config.apiToken ? " + api-token" : ""}`,
+);
+console.log(
+  `[arra-memory] fleet: ${fleetEnabled() ? "MQTT configured — list_fleet / send_to_oracle / oracle_replies live" : "disabled (mqtt_url unset)"}`,
 );

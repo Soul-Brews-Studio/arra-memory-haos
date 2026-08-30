@@ -16,6 +16,7 @@ import {
   type Memory,
 } from "./memory";
 import { setting } from "./config";
+import { listFleet, sendToMember, memberReplies, fleetStatus } from "./fleet";
 import { VERSION } from "./version";
 import { INSTANCE_NAME } from "./identity";
 import { buildDigest, digestWindows } from "./digest";
@@ -453,6 +454,48 @@ const BASE_TOOLS = [
       required: ["from", "to"],
     },
   },
+  // ── the fleet, not the corpus ────────────────────────────────────────────
+  //
+  // These reach the oracle-registry running beside us. They are deliberately
+  // NOT named list_agents / send_message: `list_agents` already exists here and
+  // answers a DIFFERENT question — who has ever written a memory — while this
+  // answers who is alive right now. A model handed two tools whose names imply
+  // the same thing will pick the wrong one, and the wrong one will look like it
+  // worked. Historical authorship and live presence are different facts and get
+  // different names.
+  {
+    name: "list_fleet",
+    description:
+      "List the oracle fleet as the message broker currently describes it — every member, whether it is online, whether a chat channel is attached (only those can be messaged), its host and version, and when it was last seen. Read live from retained MQTT state. This is NOT list_agents, which lists who has written memories to this corpus.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "send_to_oracle",
+    description:
+      "Send a message to another oracle's chat channel. Returns the message id and the exact topic it was published to. Fire-and-forget: success means the registry accepted and published it, NOT that the other oracle read it. Poll oracle_replies for an answer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Target oracle, as shown by list_oracles." },
+        text: { type: "string", description: "The message." },
+        room: { type: "string", description: "Room within that oracle's channel. Defaults to main." },
+      },
+      required: ["name", "text"],
+    },
+  },
+  {
+    name: "oracle_replies",
+    description:
+      "Recent replies from an oracle's channel. Reads an in-memory ring on the registry, so it polls RECENT traffic and is not a durable inbox — an empty result means nothing is buffered, never that no reply was sent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Oracle whose replies to read." },
+        since: { type: "number", description: "Only replies with a sequence number above this." },
+      },
+      required: ["name"],
+    },
+  },
 ];
 
 // ── generated tools ───────────────────────────────────────────────────────────
@@ -730,6 +773,51 @@ async function callTool(name: string, args: Record<string, any>) {
         ? agents.map((a) => `${a.agent} — ${a.count} memories, last ${a.latest}`).join("\n")
         : `No memories record who wrote them${where}.`;
       return { ...text(body), structuredContent: { agents, workspace: args.workspace ?? "" } };
+    }
+
+    case "list_fleet": {
+      const r = listFleet();
+      if (!r.ok) return text(`Cannot see the fleet: ${r.error}`);
+      const body = r.members.length
+        ? r.members
+            .map(
+              (m) =>
+                `${m.state === "online" ? "\u25cf" : "\u25cb"} ${m.name}` +
+                `${m.channel ? " \u00b7 chat" : " \u00b7 no channel"}` +
+                `${m.host ? ` \u00b7 ${m.host}` : ""}` +
+                `${m.version ? ` \u00b7 v${m.version}` : ""}` +
+                `${m.seen ? ` \u00b7 seen ${m.seen}` : ""}`,
+            )
+            .join("\n")
+        : "No member has published presence to the broker. Connected, but the fleet is silent.";
+      return { ...text(body), structuredContent: { members: r.members, connection: fleetStatus() } };
+    }
+
+    case "send_to_oracle": {
+      const r = await sendToMember(
+        String(args.name),
+        String(args.text),
+        args.room ? String(args.room) : undefined,
+      );
+      // The registry's own status is passed through rather than flattened:
+      // 403 (this key cannot dispatch), 404 (no such member), 429 (rate
+      // limited) and 503 (no dispatch login configured) each call for a
+      // different next move, and one generic "failed" hides which happened.
+      if (!r.ok) return text(`Not sent: ${r.error}`);
+      return {
+        ...text(
+          `Sent to ${args.name} (id ${r.id}, topic ${r.topic}). Published, not read \u2014 poll oracle_replies for an answer.`,
+        ),
+        structuredContent: { sent: true, id: r.id, topic: r.topic },
+      };
+    }
+
+    case "oracle_replies": {
+      const list = memberReplies(args.name ? String(args.name) : undefined, Number(args.since ?? 0));
+      const body = list.length
+        ? list.map((r) => `[${r.seq}] ${r.name}/${r.room} ${r.at}\n${r.text}`).join("\n\n")
+        : `Nothing buffered${args.name ? ` from ${args.name}` : ""}. This is a short in-memory ring of live traffic, so an empty result does not prove no reply was sent.`;
+      return { ...text(body), structuredContent: { replies: list } };
     }
 
     case "list_projects": {

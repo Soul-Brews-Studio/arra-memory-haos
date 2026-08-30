@@ -13,12 +13,13 @@
     "typecheck": "tsc --noEmit",
     "test": "bun run test:each",
     "sync:version": "bun scripts/sync-version.ts",
-    "test:each": "for f in src/*.test.ts; do echo \"\u2500\u2500 $f\"; bun test \"$f\" || exit 1; done"
+    "test:each": "for f in src/*.test.ts; do echo \"── $f\"; bun test \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@kitajs/html": "^4.2.9",
     "@libsql/client": "^0.17.4",
     "elysia": "^1.4.29",
+    "mqtt": "^5.15.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "three": "^0.185.1"
