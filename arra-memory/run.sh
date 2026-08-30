@@ -23,6 +23,10 @@ THEME="$(bashio::config 'theme')"
 TURSO_SYNC_URL="$(bashio::config 'turso_sync_url')"
 TURSO_AUTH_TOKEN="$(bashio::config 'turso_auth_token')"
 TURSO_SYNC_INTERVAL="$(bashio::config 'turso_sync_interval')"
+MQTT_URL="$(bashio::config 'mqtt_url')"
+MQTT_USERNAME="$(bashio::config 'mqtt_username')"
+MQTT_PASSWORD="$(bashio::config 'mqtt_password')"
+MQTT_PREFIX="$(bashio::config 'mqtt_prefix')"
 
 # bashio renders an unset optional string as the literal "null", which would
 # then be a perfectly valid — and completely wrong — passphrase.
@@ -38,6 +42,10 @@ TURSO_SYNC_INTERVAL="$(bashio::config 'turso_sync_interval')"
 [ "${TURSO_SYNC_URL}" = "null" ] && TURSO_SYNC_URL=""
 [ "${TURSO_AUTH_TOKEN}" = "null" ] && TURSO_AUTH_TOKEN=""
 [ "${TURSO_SYNC_INTERVAL}" = "null" ] && TURSO_SYNC_INTERVAL="60"
+[ "${MQTT_URL}" = "null" ] && MQTT_URL=""
+[ "${MQTT_USERNAME}" = "null" ] && MQTT_USERNAME=""
+[ "${MQTT_PASSWORD}" = "null" ] && MQTT_PASSWORD=""
+[ "${MQTT_PREFIX}" = "null" ] && MQTT_PREFIX="oracle"
 
 if [ -z "${OWNER_PASSPHRASE}" ]; then
     bashio::log.fatal "owner_passphrase is not set."
@@ -65,6 +73,10 @@ export THEME
 export TURSO_SYNC_URL
 export TURSO_AUTH_TOKEN
 export TURSO_SYNC_INTERVAL
+export MQTT_URL
+export MQTT_USERNAME
+export MQTT_PASSWORD
+export MQTT_PREFIX
 # Marks this process as Supervisor-managed, which is how the server knows its
 # options are owned elsewhere and its own settings form must stay read-only.
 # Set HERE rather than sniffed at runtime: run.sh IS the Supervisor entrypoint,
