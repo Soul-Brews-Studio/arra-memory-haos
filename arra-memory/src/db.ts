@@ -167,10 +167,47 @@ async function seedReplica(): Promise<void> {
         const placeholders = columns.map(() => "?").join(", ");
         const sql = `INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`;
 
+        // One bad row must not cost the table. With the insert loop under the
+        // per-table catch, the first row that cannot cross — oversized content,
+        // an encoding the replica rejects, a lock collision with a background
+        // sync tick — aborted the whole copy, and the corpus sat at 95 of
+        // 20,405 rows with nothing logged. Measured on maclab 2026-09-01: the
+        // seed stopped at exactly the row where it threw, mid-table, silently.
+        let seeded = 0;
+        let skipped = 0;
+        let schemaMismatch: string | null = null;
         for (const row of existing) {
-          await db().execute({ sql, args: columns.map((c) => row[c] as never) });
+          try {
+            await db().execute({ sql, args: columns.map((c) => row[c] as never) });
+            seeded++;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            // A table that predates a column fails EVERY row on the same
+            // missing column — a wrong-shaped leftover in the target database.
+            // Abandon the table with the reason rather than logging the same
+            // error once per row.
+            if (/no such column/i.test(message)) {
+              schemaMismatch = message;
+              break;
+            }
+            skipped++;
+            console.error(
+              `[arra-memory] seed skipped one ${table} row (id ${String(row.id ?? "?")}): ${message}`,
+            );
+          }
         }
-        console.log(`[arra-memory] seeded ${existing.length} rows into ${table}`);
+        if (schemaMismatch) {
+          console.error(
+            `[arra-memory] could not seed ${table}: ${schemaMismatch}. The table ` +
+              `in the replica target predates the current schema — drop it there ` +
+              `and restart, and the next seed recreates it correctly.`,
+          );
+          continue;
+        }
+        console.log(
+          `[arra-memory] seeded ${seeded} rows into ${table}` +
+            (skipped ? ` (${skipped} skipped — see errors above)` : ""),
+        );
       } catch (error) {
         // One table failing must not abandon the rest — a missing table in an
         // older standalone database is expected, not fatal.
