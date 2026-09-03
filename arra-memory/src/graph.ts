@@ -325,8 +325,18 @@ export async function buildGraph(scope: MemoryScope & { limit?: number }): Promi
   const result = await db().execute({ sql: MEMORIES.embedded, args: [limit] });
   const found = rows<VectorRow>(result);
 
-  const total = Number(
-    (rows<{ n: number }>(await db().execute(MEMORIES.countAll))[0]?.n ?? 0),
+  // Counted over the WHOLE corpus, not derived from the sample above. The
+  // earlier `total - vectors.length` conflated two different absences: rows
+  // with no vector, and rows the LIMIT simply did not reach. At 29k memories
+  // with a limit of 500 that reported 28,611 "without a vector" while coverage
+  // was in fact 100% — the number the UI states plainly, so it must be the
+  // real one.
+  const coverage = rows<{ total: number; embedded: number }>(
+    await db().execute(VECTORS.coverage),
+  )[0];
+  const unembedded = Math.max(
+    0,
+    Number(coverage?.total ?? 0) - Number(coverage?.embedded ?? 0),
   );
 
   // Vectors arrive as a blob; libSQL hands back an ArrayBuffer or a typed array
@@ -356,7 +366,6 @@ export async function buildGraph(scope: MemoryScope & { limit?: number }): Promi
     });
   }
 
-  const unembedded = Math.max(0, total - vectors.length);
 
   if (vectors.length < 2) {
     return {

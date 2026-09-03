@@ -371,9 +371,6 @@ export const MEMORIES = {
               ORDER BY importance DESC, updated_at DESC
               LIMIT ?`,
 
-  /** Total memories, so the graph can say how many it had to leave out. */
-  countAll: `SELECT COUNT(*) AS n FROM memories`,
-
   /** Distinct kinds with counts — the chip row, and what merge is chosen from. */
   kinds: `SELECT kind, COUNT(*) AS count
             FROM memories
